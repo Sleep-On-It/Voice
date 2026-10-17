@@ -216,6 +216,7 @@ final class DirectOps {
             return Outcome.failed(new EngineError(ErrorCode.VALIDATION_FAILED, name + ": " + e.getMessage(), null, Map.of(), true, List.of()));
         }
         if (roiChanged) eng.observers.noteRoi(doc);
+        eng.observers.noteThreshold(doc);
         String actionId = eng.history.nextId();
         Map<String, String> gAfter = Globals.capture();
         HistoryRecord rec = History.record(actionId, r.origin(), Provenance.TYPED, name, name, params, ts, lines, exact, gBefore,

@@ -76,4 +76,33 @@ class EngineErrorTest {
         assertEquals(OperationState.FAILED, r.state(), String.valueOf(r.error()));
         assertTrue(r.error().message().contains("Test plugin error text"), r.error().message());
     }
+
+    /**
+     * IJ.run(imp, ...) restores the thread's temporary current image only on normal return. IJ.error under
+     * redirected messages aborts with an exception, which used to leave the worker thread pointing at the
+     * document of the failed action; once that document was closed, every later macro or implicit-image command
+     * on the worker hit a flushed ImagePlus ("requires an image of type", NullPointerException in Functions).
+     * Found by the random-order suite run of #4 (EngineErrorTest before EngineEventOrderTest).
+     */
+    @Test
+    void aFailedActionLeavesNoStaleTemporaryCurrentImageOnTheWorker() throws Exception {
+        assertEquals(OperationState.FAILED, run("Fidelis Error").state());
+        engine.submit(ActionRequest.session(Origin.PANEL, ActionRequest.Operations.CLOSE, Map.of("discard", true), TargetScope.of(doc)))
+                .get(30, TimeUnit.SECONDS);
+        ActionResult opened = engine.open(EngineFixture.repoFile("fixtures/two-squares.png")).get(60, TimeUnit.SECONDS);
+        DocumentId fresh = opened.digest().added().get(0);
+        engine.focus(fresh);
+        String before = Pixels.hash(engine.imagePlus(fresh), false);
+        ActionResult first = engine.submit(ActionRequest.code(Origin.PANEL, "ijm", "run(\"Invert\");", TargetScope.of(fresh), null))
+                .get(30, TimeUnit.SECONDS);
+        ActionResult r = engine.submit(ActionRequest.code(Origin.PANEL, "ijm", "run(\"Invert\");", TargetScope.of(fresh),
+                first.confirmationToken())).get(60, TimeUnit.SECONDS);
+        assertEquals(OperationState.COMPLETED, r.state(), String.valueOf(r.error()));
+        assertTrue(!before.equals(Pixels.hash(engine.imagePlus(fresh), false)), "the macro inverted the fresh document");
+        // and a typed command that relies on nothing implicit still works on the fresh document
+        ActionResult inv = engine.submit(ActionRequest.command(Origin.PANEL, "ij1:Edit>Invert", Map.of(), TargetScope.of(fresh)))
+                .get(60, TimeUnit.SECONDS);
+        assertEquals(OperationState.COMPLETED, inv.state(), String.valueOf(inv.error()));
+        assertEquals(before, Pixels.hash(engine.imagePlus(fresh), false));
+    }
 }

@@ -12,6 +12,13 @@ final class Op {
     volatile boolean cancelRequested;
     /** True once the engine actually signalled the running operation (Escape key or Interpreter.abort). */
     volatile boolean abortIssued;
+    /**
+     * For CODE: the interpreter is about to run (set under the op's monitor). A cancel that arrives earlier is
+     * honoured by the runner before the macro starts; a later one aborts the interpreter the runner registered.
+     */
+    volatile boolean interpreterStarted;
+    /** For CODE: the interpreter returned (normally, aborted or by exception); the abort thread stops retrying. */
+    volatile boolean interpreterFinished;
     /** Set while this operation is a CODE action; nested commands record this as {@code parentActionId}. */
     volatile String actionId;
     /** For commands nested under a CODE action: the CODE action id. */

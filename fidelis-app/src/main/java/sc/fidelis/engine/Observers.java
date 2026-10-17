@@ -45,6 +45,8 @@ final class Observers {
     private final Map<ImagePlus, ScheduledFuture<?>> pendingRoi = new IdentityHashMap<>();
     private final Map<ImagePlus, ScheduledFuture<?>> pendingUpdate = new IdentityHashMap<>();
     private final Map<ImagePlus, String> lastRoi = java.util.Collections.synchronizedMap(new IdentityHashMap<>());
+    /** "lo,hi" of the last threshold accounted for per image ("" = none); see {@link #settleThreshold}. */
+    private final Map<ImagePlus, String> lastThreshold = java.util.Collections.synchronizedMap(new IdentityHashMap<>());
 
     Observers(DefaultEngine eng) {
         this.eng = eng;
@@ -116,8 +118,12 @@ final class Observers {
                 doc == null ? null : TargetScope.of(doc.id), lines, options != null, Globals.capture(), Map.of(),
                 OperationState.COMPLETED, null);
         eng.recordObserved(rec);
-        // results rows, new images and so on appear after the command finishes
-        timer.schedule(() -> eng.afterNative(rec.actionId(), doc), 600, TimeUnit.MILLISECONDS);
+        // rows of the previous native command are captured now; a table restart by this command is noted (#5)
+        eng.results.beforeNative(label, doc == null ? null : doc.id, rec.actionId());
+        ij.plugin.frame.RoiManager rm = ij.plugin.frame.RoiManager.getRawInstance();
+        int managerBefore = rm == null ? -1 : rm.getCount();
+        // results rows, new images, ROI Manager entries and so on appear after the command finishes
+        timer.schedule(() -> eng.afterNative(rec.actionId(), doc, managerBefore), 600, TimeUnit.MILLISECONDS);
     }
 
     private String commandId(String label) {
@@ -183,6 +189,17 @@ final class Observers {
         }
     }
 
+    /** Remember the threshold a typed action left (or a document arrived with), so it is not recorded again as native. */
+    void noteThreshold(Doc doc) {
+        lastThreshold.put(doc.imp, thresholdOf(doc.imp));
+    }
+
+    private static String thresholdOf(ImagePlus imp) {
+        ij.process.ImageProcessor ip = imp.getProcessor();
+        if (ip == null || ip.getMinThreshold() == ij.process.ImageProcessor.NO_THRESHOLD) return "";
+        return Options.formatNumber(ip.getMinThreshold()) + "," + Options.formatNumber(ip.getMaxThreshold());
+    }
+
     // ---- image updates --------------------------------------------------------------------------------
 
     private void onUpdated(ImagePlus imp) {
@@ -195,11 +212,39 @@ final class Observers {
                 synchronized (pendingUpdate) {
                     pendingUpdate.remove(imp);
                 }
+                settleThreshold(doc);
                 StateDigest digest = new StateDigest(List.of(), List.of(),
                         List.of(new DocumentChange(doc.id, false, false, true, false, false)), 0, Map.of(), List.of(), List.of(), List.of());
                 eng.events.emit(seq -> new EngineEvent.StateDigestEvent(seq, null, digest));
             }, COALESCE_MS, TimeUnit.MILLISECONDS));
         }
+    }
+
+    /**
+     * A threshold set natively (the Threshold adjuster, a plugin) is a result-affecting state change that Convert to
+     * Mask and Analyze Particles depend on: record it with the exact numbers IJ1 holds, as {@code setThreshold(lo, hi)}
+     * (the method a person chose in the adjuster is not observable; the numbers reproduce the same mask).
+     */
+    private void settleThreshold(Doc doc) {
+        String now = thresholdOf(doc.imp);
+        String before = lastThreshold.getOrDefault(doc.imp, "");
+        if (now.equals(before)) return;
+        lastThreshold.put(doc.imp, now);
+        Map<String, Object> params = new java.util.LinkedHashMap<>();
+        String opName;
+        List<String> lines;
+        if (now.isEmpty()) {
+            opName = sc.fidelis.engine.api.ActionRequest.Operations.RESET_THRESHOLD;
+            lines = List.of("resetThreshold();");
+        } else {
+            ij.process.ImageProcessor ip = doc.imp.getProcessor();
+            opName = sc.fidelis.engine.api.ActionRequest.Operations.SET_THRESHOLD;
+            params.put("lower", ip.getMinThreshold());
+            params.put("upper", ip.getMaxThreshold());
+            lines = List.of("setThreshold(" + now.replace(",", ", ") + ");");
+        }
+        eng.recordObserved(History.record(eng.history.nextId(), Origin.OBSERVED, Provenance.NATIVE, opName, "Threshold", params,
+                TargetScope.of(doc.id), lines, true, Globals.capture(), Map.of(), OperationState.COMPLETED, null));
     }
 
     /** Drop per-image state of a closed document (the maps are strong, identity-keyed and would pin the pixel data). */
@@ -213,6 +258,7 @@ final class Observers {
             ScheduledFuture<?> f = pendingUpdate.remove(imp);
             if (f != null) f.cancel(false);
         }
+        lastThreshold.remove(imp);
     }
 
     List<ImagePlus> pendingImages() {

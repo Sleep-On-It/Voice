@@ -40,13 +40,20 @@ import sc.fidelis.engine.api.TargetScope;
 class EngineScienceTest {
     DefaultEngine engine;
     DocumentId doc;
+    /** History size before this test's first step: the macro this test produced is {@code exportMacroSince(historyStart)}. */
+    int historyStart;
 
     @BeforeEach
     void open() throws Exception {
         engine = EngineFixture.engine();
+        historyStart = engine.history().size();
         ActionResult r = engine.open(EngineFixture.repoFile("fixtures/two-squares.png")).get(60, TimeUnit.SECONDS);
         assertEquals(OperationState.COMPLETED, r.state(), String.valueOf(r.error()));
-        doc = engine.documents().get(engine.documents().size() - 1).id();
+        // the document this test opened (not whichever document happens to be last), focused explicitly
+        assertEquals(1, r.digest().added().size(), String.valueOf(r.digest()));
+        doc = r.digest().added().get(0);
+        engine.focus(doc);
+        assertEquals(doc, engine.focused().orElseThrow());
     }
 
     @AfterEach
@@ -189,12 +196,14 @@ class EngineScienceTest {
     @Test
     void macroExportContainsSelectImageAndTheExactRunLine() throws Exception {
         cmd("ij1:Process>Filters>Gaussian Blur...", m("sigma", 2, "scaled", false, "stack", false));
-        String macro = engine.exportMacro();
+        // the macro of this test's steps: the session history also holds every earlier test's steps
+        String macro = engine.exportMacroSince(historyStart);
         assertTrue(macro.contains("selectImage("), macro);
         assertTrue(macro.contains("run(\"Gaussian Blur...\", \"sigma=2\");"), macro);
         assertTrue(macro.contains("open(\""), macro);
         assertTrue(macro.contains("setOption(\"BlackBackground\""), macro);
-        assertTrue(macro.indexOf("open(\"") < macro.indexOf("selectImage("));
+        assertTrue(macro.indexOf("open(\"") < macro.indexOf("selectImage("), macro);
+        assertTrue(macro.indexOf("selectImage(") < macro.indexOf("run(\"Gaussian Blur..."), macro);
     }
 
     @Test

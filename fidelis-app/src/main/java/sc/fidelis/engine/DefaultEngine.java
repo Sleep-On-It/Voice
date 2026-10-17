@@ -22,6 +22,7 @@ import ij.WindowManager;
 import ij.gui.ImageWindow;
 import ij.gui.Roi;
 import ij.macro.Interpreter;
+import ij.plugin.frame.RoiManager;
 import net.imagej.ImageJ;
 import sc.fidelis.Bootstrap;
 import sc.fidelis.engine.api.ActionRequest;
@@ -153,6 +154,11 @@ public final class DefaultEngine implements Engine {
         events.remove(listener);
     }
 
+    /** The registered listeners, in registration order (implementation-only; test isolation and diagnostics). */
+    public List<EngineListener> listeners() {
+        return events.snapshot();
+    }
+
     @Override
     public void quit(boolean discardUnsaved) {
         quit(discardUnsaved, worker::shutdown, () -> {
@@ -251,8 +257,31 @@ public final class DefaultEngine implements Engine {
         op.cancelRequested = true;
         if (running == op) {
             if (op.request.kind() == ActionKind.CODE) {
-                op.abortIssued = true;
-                Interpreter.abort();
+                // Abort the interpreter this operation runs (never the static Interpreter.instance, which may be
+                // another macro's or still unset while ours is tokenising). abortMacro waits up to 2 s for the
+                // macro thread to stop, so it runs off the caller's thread (the UI cancels from the EDT).
+                boolean started;
+                synchronized (op) {
+                    started = op.interpreterStarted;
+                    op.abortIssued = true;
+                }
+                Interpreter i = interpreter;
+                if (started && i != null) {
+                    Thread t = new Thread(() -> {
+                        // Interpreter.run(Program) clears the abort flag once it has tokenised the text: an abort
+                        // issued in that window is lost, so repeat until the runner reports the macro finished.
+                        for (int k = 0; k < 50 && !op.interpreterFinished; k++) {
+                            i.abortMacro();
+                            try {
+                                Thread.sleep(20);
+                            } catch (InterruptedException e) {
+                                return;
+                            }
+                        }
+                    }, "fidelis-abort-" + op.id);
+                    t.setDaemon(true);
+                    t.start();
+                }
             } else {
                 op.abortIssued = true;
                 CommandRunner.requestEscape();
@@ -324,19 +353,33 @@ public final class DefaultEngine implements Engine {
         events.emit(seq -> new EngineEvent.HistoryAppended(seq, rec));
     }
 
-    /** Follow-up of a native command: adopt new images and capture rows it added to the Results table. */
-    void afterNative(String actionId, Doc doc) {
+    /**
+     * Follow-up of a native command: adopt new images, capture rows it added to the Results table, and take over
+     * ROI Manager entries it added or removed ({@code managerBefore} is the count before the command, -1 for no
+     * manager) into the target document's ROI list, so Analyze Particles run from Fiji's menu fills the same list
+     * as the typed request (#5).
+     */
+    void afterNative(String actionId, Doc doc, int managerBefore) {
         try {
             worker.execute(() -> {
                 try {
                     Registry.Change ch = reconcile();
                     results.captureNative(doc == null ? null : doc.id, actionId);
-                    if (!ch.isEmpty()) {
+                    boolean roiChanged = false;
+                    RoiManager rm = RoiManager.getRawInstance();
+                    int managerAfter = rm == null ? -1 : rm.getCount();
+                    if (doc != null && managerAfter >= 0 && managerAfter != managerBefore && registry.all().contains(doc)) {
+                        roiLists.syncBack(doc);
+                        roiChanged = true;
+                    }
+                    if (!ch.isEmpty() || roiChanged) {
                         List<DocumentId> added = new ArrayList<>();
                         for (Doc d : ch.added()) added.add(d.id);
                         List<DocumentId> removed = new ArrayList<>();
                         for (Doc d : ch.removed()) removed.add(d.id);
-                        StateDigest digest = new StateDigest(added, removed, List.of(), 0, Map.of(), List.of(), List.of(), List.of());
+                        List<StateDigest.DocumentChange> changed = roiChanged
+                                ? List.of(new StateDigest.DocumentChange(doc.id, false, false, false, true, false)) : List.of();
+                        StateDigest digest = new StateDigest(added, removed, changed, 0, Map.of(), List.of(), List.of(), List.of());
                         events.emit(seq -> new EngineEvent.StateDigestEvent(seq, null, digest));
                     }
                 } catch (Throwable t) {
@@ -387,6 +430,7 @@ public final class DefaultEngine implements Engine {
             return finish(op, o, t0);
         } finally {
             Op.CURRENT.remove();
+            WindowManager.setTempCurrentImage(null); // the worker never keeps an implicit current image between operations
         }
     }
 
@@ -566,6 +610,14 @@ public final class DefaultEngine implements Engine {
     @Override
     public List<MeasurementRow> results() {
         return results.all();
+    }
+
+    /**
+     * Re-read the IJ1 system Results table after it was changed outside any engine action (a reset by other code):
+     * a shorter table rebuilds the engine rows from row 0 (implementation-only; test isolation).
+     */
+    public void resyncResults() {
+        results.markSeen();
     }
 
     @Override

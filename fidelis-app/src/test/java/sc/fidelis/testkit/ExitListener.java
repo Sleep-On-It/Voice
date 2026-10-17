@@ -24,6 +24,8 @@ public final class ExitListener implements LauncherSessionListener, TestExecutio
 
     @Override
     public void launcherSessionOpened(LauncherSession session) {
+        // before discovery loads any test class (and, through the verifier, ij.* classes): see FijiFixture.patchEarly
+        FijiFixture.patchEarly();
         session.getLauncher().registerTestExecutionListeners(this);
     }
 

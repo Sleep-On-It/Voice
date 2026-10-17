@@ -25,6 +25,15 @@ public final class FijiFixture {
 
     private FijiFixture() {}
 
+    /**
+     * Run the ImageJ1 legacy patcher now (the static initialiser) and nothing else. {@link ExitListener} calls it
+     * when the launcher session opens, before test discovery: loading a test class whose methods use {@code ij.*}
+     * types makes the verifier load those classes unpatched, and the patcher can then no longer patch them (issue #4).
+     */
+    static void patchEarly() {
+        // the static initialiser has run when this returns
+    }
+
     public static synchronized ImageJ imageJ() {
         if (ij == null) {
             try {
@@ -33,8 +42,30 @@ public final class FijiFixture {
                 // Look-and-feel is cosmetic for tests.
             }
             ij = new ImageJ();
+            requirePatched();
+            IsolationState.captureBaseline();
         }
         return ij;
+    }
+
+    /**
+     * Fail fast when IJ1 runs unpatched: the legacy patcher adds {@code setVisible(boolean)} and {@code show()} to
+     * {@code ij.gui.ImageWindow} (ij1-patcher LegacyInjector), so their absence means {@code ImageWindow} was loaded
+     * before {@code LegacyInjector.preinit()}. Unpatched windows bypass the legacy hooks and every later result is suspect.
+     */
+    private static void requirePatched() {
+        try {
+            ij.gui.ImageWindow.class.getDeclaredMethod("setVisible", boolean.class);
+            ij.gui.ImageWindow.class.getDeclaredMethod("show");
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException("ImageJ1 is not patched: ij.gui.ImageWindow was loaded before the legacy patcher ran"
+                    + " (ExitListener must call FijiFixture.patchEarly() before test discovery)", e);
+        }
+    }
+
+    /** Whether the shared context exists (test isolation only touches IJ1 state once it does). */
+    public static synchronized boolean started() {
+        return ij != null;
     }
 
     /** Dispose the shared context off the calling thread, waiting at most the given time. */

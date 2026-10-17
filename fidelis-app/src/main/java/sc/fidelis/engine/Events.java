@@ -26,6 +26,10 @@ final class Events {
         listeners.remove(l);
     }
 
+    List<EngineListener> snapshot() {
+        return List.copyOf(listeners);
+    }
+
     void emit(LongFunction<EngineEvent> factory) {
         synchronized (lock) {
             EngineEvent e = factory.apply(++seq);

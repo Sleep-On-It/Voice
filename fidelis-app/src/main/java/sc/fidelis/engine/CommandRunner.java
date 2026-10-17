@@ -12,6 +12,7 @@ import java.util.Set;
 import ij.CommandListener;
 import ij.Executer;
 import ij.IJ;
+import ij.WindowManager;
 import ij.ImagePlus;
 import ij.gui.Roi;
 import ij.plugin.filter.Analyzer;
@@ -264,6 +265,9 @@ final class CommandRunner {
             thrown = t;
         } finally {
             Executer.removeCommandListener(tail);
+            // IJ.run(imp, ...) restores the thread's temporary current image only on normal return; an abort
+            // (IJ.error under redirected messages) would otherwise pin this worker to a document that may be closed
+            WindowManager.setTempCurrentImage(null);
             escaped = IJ.escapePressed();
             IJ.resetEscape();
             IJ.setKeyUp(IJ.ALL_KEYS);
@@ -499,7 +503,10 @@ final class CommandRunner {
         HistoryRecord rec = History.record(actionId, r.origin(), prov, en.schema.commandId(), en.label(), params, ts, macroLines,
                 exact, gBefore, gDelta, state, note);
         eng.history.add(rec);
-        if (doc != null) eng.observers.noteRoi(doc);
+        if (doc != null) {
+            eng.observers.noteRoi(doc);
+            eng.observers.noteThreshold(doc);
+        }
 
         if (state != OperationState.COMPLETED) {
             eng.results.markSeen();

@@ -168,7 +168,15 @@ class StoredBaselineTests(unittest.TestCase):
         dirs = list(BASELINES.glob("FX-001/*/gui"))
         if not dirs:
             self.skipTest("no FX-001 baseline")
-        raw = (dirs[0] / "raw" / "s01_open" / "0_1.raw").read_bytes()
+        expected = json.loads((dirs[0] / "s01_open.json").read_text())["images"][0]["planeSha256"][0]
+        dump = dirs[0] / "raw" / "s01_open" / "0_1.raw"
+        if dump.exists():  # written by baseline.py; git-ignored, so absent in a fresh clone
+            raw = dump.read_bytes()
+        else:  # the committed fixture, decoded independently; the hash ties it to the stored (committed) dump
+            from PIL import Image
+
+            raw = Image.open(ROOT / "fixtures" / "two-squares.png").tobytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), expected)
         self.assertEqual(len(raw), 64 * 64)
         self.assertEqual(sum(raw) / len(raw), 18.75)  # fixtures/README.md
         self.assertEqual(sorted(set(raw)), [0, 100, 200])

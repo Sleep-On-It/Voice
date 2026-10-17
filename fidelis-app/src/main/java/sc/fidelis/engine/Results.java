@@ -21,6 +21,15 @@ final class Results {
     private final Events events;
     private final List<MeasurementRow> rows = new ArrayList<>();
     private int lastSeen;
+    /** Fingerprint of table row {@code lastSeen - 1} when it was accounted for: a different row there means the table restarted. */
+    private String lastRowKey = "";
+    /** A native command about to run was seen to restart the table (Clear Results, a shrink, a changed last row). */
+    private boolean restartPending;
+    /** Times the mirror was rebuilt from row 0 (diagnostics and tests). */
+    private int generation;
+    /** The last native command whose rows may still be uncaptured: captured at the start of the next native command. */
+    private DocumentId pendingDoc;
+    private String pendingAction;
 
     Results(Events events) {
         this.events = events;
@@ -30,6 +39,23 @@ final class Results {
     static int tableSize() {
         ResultsTable rt = ResultsTable.getResultsTable();
         return rt == null ? 0 : rt.size();
+    }
+
+    /** Label and every value of row {@code r} as exact bits; "" when the row does not exist. */
+    private static String rowKey(ResultsTable rt, int r) {
+        if (rt == null || r < 0 || r >= rt.size()) return "";
+        StringBuilder sb = new StringBuilder(String.valueOf(rt.getLabel(r)));
+        for (String h : rt.getHeadings()) {
+            if (h == null || h.equals("Label")) continue;
+            int col = rt.getColumnIndex(h);
+            if (col == ResultsTable.COLUMN_NOT_FOUND) continue;
+            sb.append('|').append(Double.doubleToLongBits(rt.getValueAsDouble(col, r)));
+        }
+        return sb.toString();
+    }
+
+    synchronized int generation() {
+        return generation;
     }
 
     /**
@@ -62,10 +88,15 @@ final class Results {
             }
         }
         int total;
+        String key = rowKey(rt, n - 1);
         synchronized (this) {
             rows.addAll(fresh);
             total = rows.size();
             lastSeen = n;
+            lastRowKey = key;
+            restartPending = false;
+            if (rebuilt) generation++;
+            if (actionId != null && actionId.equals(pendingAction)) pendingAction = null;
         }
         if (rebuilt || !fresh.isEmpty()) events.emit(seq -> new EngineEvent.ResultsChanged(seq, total));
         return fresh.size();
@@ -73,22 +104,64 @@ final class Results {
 
     /** Note the current table size as accounted for (after typed actions); a shrunken table rebuilds the list. */
     void markSeen() {
+        ResultsTable rt = ResultsTable.getResultsTable();
         int n = tableSize();
+        String key = rowKey(rt, n - 1);
         boolean shrunk;
         synchronized (this) {
             shrunk = n < rows.size();
             lastSeen = n;
+            lastRowKey = key;
+            restartPending = false;
+            pendingAction = null;
         }
         if (shrunk) capture(0, null, null);
     }
 
-    /** After a native command: capture rows it added to the system table (or rebuild after a clear). */
-    int captureNative(DocumentId doc, String actionId) {
-        int from;
+    /**
+     * Called synchronously when a native command is about to run (#5 native drift). First the rows of the previous
+     * native command are captured under its own id, so back-to-back native commands keep exact attribution
+     * even though their timers have not fired yet. Then a restart of the table is noted when the command is
+     * {@code Clear Results}, the table is shorter than accounted for, or the last accounted row changed: the
+     * next capture rebuilds the mirror from row 0 instead of trusting a row count that happens to match.
+     */
+    void beforeNative(String label, DocumentId doc, String actionId) {
+        DocumentId prevDoc;
+        String prevAction;
         synchronized (this) {
-            from = tableSize() < lastSeen ? 0 : lastSeen;
+            prevDoc = pendingDoc;
+            prevAction = pendingAction;
         }
-        if (from > 0 && tableSize() <= from) return 0; // nothing new
+        if (prevAction != null) captureNative(prevDoc, prevAction);
+        ResultsTable rt = ResultsTable.getResultsTable();
+        int n = rt == null ? 0 : rt.size();
+        String key = rowKey(rt, n - 1);
+        synchronized (this) {
+            if ("Clear Results".equals(label) || n < lastSeen || (lastSeen > 0 && n >= lastSeen && !rowKey(rt, lastSeen - 1).equals(lastRowKey)))
+                restartPending = true;
+            if (n == lastSeen && !restartPending) lastRowKey = key;
+            pendingDoc = doc;
+            pendingAction = actionId;
+        }
+    }
+
+    /**
+     * After a native command: capture rows it added to the system table, or rebuild the mirror when the table
+     * restarted (noted by {@link #beforeNative}, a shrink, or a changed last accounted row).
+     */
+    int captureNative(DocumentId doc, String actionId) {
+        ResultsTable rt = ResultsTable.getResultsTable();
+        int n = rt == null ? 0 : rt.size();
+        int from;
+        boolean restart;
+        synchronized (this) {
+            restart = restartPending || n < lastSeen || (lastSeen > 0 && !rowKey(rt, lastSeen - 1).equals(lastRowKey));
+            from = restart ? 0 : lastSeen;
+            if (!restart && from > 0 && n <= from) {
+                if (actionId != null && actionId.equals(pendingAction)) pendingAction = null;
+                return 0; // nothing new
+            }
+        }
         return capture(from, doc, actionId);
     }
 

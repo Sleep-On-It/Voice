@@ -106,6 +106,10 @@ final class CodeRunner {
         op.actionId = actionId;
         Map<String, String> gBefore = Globals.capture();
         int resultsBefore = Results.tableSize();
+        // a targeted macro runs on its document: typed actions never rely on IJ1's implicit current image
+        Doc target = r.target() == null || r.target().document() == null ? null : eng.registry.get(r.target().document());
+        ij.WindowManager.setTempCurrentImage(null);
+        if (target != null) eng.makeCurrent(target);
         eng.setRunning(op);
         eng.emitState(op, OperationState.RUNNING, null);
         Guard guard = Guard.begin(new Guard.Listener() {
@@ -125,14 +129,23 @@ final class CodeRunner {
         eng.setInterpreter(interp);
         String ret = null;
         Throwable thrown = null;
+        boolean cancelledBeforeStart;
+        synchronized (op) {
+            // Interpreter.run resets the interpreter's abort flag when it starts, so a cancel that arrived before
+            // this point would be lost: honour it here, and let cancel() abort only an interpreter that has started.
+            cancelledBeforeStart = op.cancelRequested;
+            if (cancelledBeforeStart) op.abortIssued = true;
+            else op.interpreterStarted = true;
+        }
         try {
-            ret = interp.run(text, null);
+            ret = cancelledBeforeStart ? "[aborted]" : interp.run(text, null);
         } catch (Throwable e) {
             thrown = e;
             interp.abortMacro();
             ImagePlus cur = ij.WindowManager.getCurrentImage();
             if (cur != null) cur.unlock();
         } finally {
+            op.interpreterFinished = true;
             eng.setInterpreter(null);
             eng.setRunning(null);
             eng.setGuard(null);
