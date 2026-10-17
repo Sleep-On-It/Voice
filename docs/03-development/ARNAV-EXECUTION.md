@@ -17,7 +17,7 @@ For Arnav's Claude Code session. Self-contained: you do not need the planning co
 
 ## Identity and repository
 - Developer: Arnav, GitHub `reverez` (verified, admin on `reverez/Voice`).
-- Repository: `reverez/Voice` only. Never touch `Sleep-On-It/Voice`, `AyushGupta05/Voice` or `Sleep-On-It/Fidelis`.
+- Repository: `Sleep-On-It/Voice` (primary since 17 Oct 2026; `reverez/Voice` no longer required). Never touch `AyushGupta05/Voice` or `Sleep-On-It/Fidelis`.
 - Your branch: `feat/arnav-engine` (created at `215fdb8`). Base for PRs: `development/fidelis-workstation`.
 - Lead machine: existing worktree `C:\Users\arnav\Documents\dev\fidelis-dev` uses remote `voice` = reverez/Voice (its `origin` is the read-only `Sleep-On-It/Fidelis`). Create your own worktree: `git -C C:\Users\arnav\Documents\dev\fidelis-dev worktree add C:\Users\arnav\Documents\dev\fidelis-engine feat/arnav-engine`.
 - Python: `C:\Users\arnav\Documents\dev\click-to-batch\.venv\Scripts\python.exe -I`. Fiji: `C:\Users\arnav\Documents\dev\Fiji` (the tools' default).
@@ -65,9 +65,9 @@ python -I docs/tools/check_docs.py                                 # docs PRs: 0
 git fetch voice; git switch feat/arnav-engine; git merge voice/development/fidelis-workstation
 # work, commit (message ends with the attribution line your session is configured with)
 git push voice feat/arnav-engine
-gh pr create --repo reverez/Voice --base development/fidelis-workstation --head feat/arnav-engine --title "engine: <what>" --body-file pr.md
+gh pr create --repo Sleep-On-It/Voice --base development/fidelis-workstation --head feat/arnav-engine --title "engine: <what>" --body-file pr.md
 ```
-Integration (checkpoints only): `gh pr merge <n> --repo reverez/Voice --merge`, then build + full suite twice on the merged head, then record on #2.
+Integration (checkpoints only): `gh pr merge <n> --repo Sleep-On-It/Voice --merge`, then build + full suite twice on the merged head, then record on #2.
 
 ## Communication
 Comment prefixes and labels per GITHUB-WORKFLOW section 3 (`START:`, `PROGRESS:`, `BLOCKED:`, `READY FOR REVIEW:`, `CONTRACT PROPOSAL:`, `CONTRACT APPROVED`). Contract proposals mention the affected issues (#6 for NL/UI adoption, #17 for the UI).
@@ -82,11 +82,11 @@ At the freeze and when you stop: `HANDOFF:` comment on #2 with the integration S
 
 ```text
 You are Arnav's Claude Code session for Fidelis (engine, science and integration). Work only in the GitHub
-repository reverez/Voice on branch feat/arnav-engine, PRs into development/fidelis-workstation. Never touch
-Sleep-On-It/Voice, AyushGupta05/Voice or Sleep-On-It/Fidelis; never force-push, rewrite history, delete
+repository Sleep-On-It/Voice on branch feat/arnav-engine, PRs into development/fidelis-workstation. Never touch
+AyushGupta05/Voice or Sleep-On-It/Fidelis; never force-push, rewrite history, delete
 branches or merge into main.
 First read CLAUDE.md, docs/03-development/ARNAV-EXECUTION.md, WORKSTREAM-CONTRACTS.md, GITHUB-WORKFLOW.md
-and docs/03-development/handoffs/ARNAV.md. Then run `gh issue list --repo reverez/Voice --label owner:arnav
+and docs/03-development/handoffs/ARNAV.md. Then run `gh issue list --repo Sleep-On-It/Voice --label owner:arnav
 --state open` and start with issue #4 (shared-JVM test isolation), then #5, #6, #7 in the order of the brief;
 act as integrator at the checkpoints in #10 (I1 Sat 19:00, I2 21:30, I3 23:30, I4 Sun 09:00 BST, freeze 10:30).
 Only edit files your stream owns (check with fidelis-app/tools/check_ownership.py); contract changes follow

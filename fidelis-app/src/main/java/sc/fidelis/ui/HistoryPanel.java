@@ -63,6 +63,7 @@ public final class HistoryPanel extends JPanel {
     private final JButton redo = new JButton("Redo");
     private final JButton replay = new JButton("Replay");
     private final JButton export = new JButton("Export .ijm…");
+    private final JButton edit = new JButton("Open in editor");
 
     HistoryPanel(UiContext ctx) {
         super(new BorderLayout());
@@ -76,16 +77,33 @@ public final class HistoryPanel extends JPanel {
         redo.addActionListener(e -> direct(Operations.REDO, "Redo"));
         replay.addActionListener(e -> replay());
         export.addActionListener(e -> exportMacro());
+        edit.setToolTipText("Open the generated macro in the Macro editor, where it can be changed and run");
+        edit.addActionListener(e -> {
+            ctx.editor().setText(ctx.engine.exportMacro());
+            ctx.docks().showEditor();
+        });
         bar.add(undo);
         bar.add(redo);
         bar.add(replay);
         bar.add(export);
+        bar.add(edit);
         add(bar, BorderLayout.NORTH);
 
         table.setShowGrid(false);
         table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
-        int[] widths = {64, 54, 96, 190, 240, 90};
-        for (int i = 0; i < widths.length; i++) table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+        // Time, Origin, Provenance and Outcome keep a width that shows their whole text in the demo layout (issue #15);
+        // Step and Parameters take what remains (the full parameter text is in the tooltip).
+        int[] widths = {66, 44, 86, 150, 200, 64};
+        int[] minimums = {62, 40, 80, 90, 60, 56};
+        for (int i = 0; i < widths.length; i++) {
+            table.getColumnModel().getColumn(i).setPreferredWidth(widths[i]);
+            table.getColumnModel().getColumn(i).setMinWidth(minimums[i]);
+        }
+        table.getColumnModel().getColumn(0).setMaxWidth(72);
+        table.getColumnModel().getColumn(1).setMaxWidth(48);
+        table.getColumnModel().getColumn(2).setMaxWidth(110);
+        table.getColumnModel().getColumn(5).setMaxWidth(90);
+        table.getColumnModel().getColumn(4).setCellRenderer(new TooltipRenderer());
         table.getColumnModel().getColumn(1).setCellRenderer(new OriginRenderer());
         table.getColumnModel().getColumn(2).setCellRenderer(new BadgeRenderer());
         table.getSelectionModel().addListSelectionListener(e -> updateButtons());
@@ -105,8 +123,10 @@ public final class HistoryPanel extends JPanel {
         right.add(rs, BorderLayout.CENTER);
 
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, right);
-        split.setResizeWeight(0.62);
+        split.setResizeWeight(0.68);
+        split.setOneTouchExpandable(true); // the macro text can be tucked away when the step list needs the width
         split.setBorder(null);
+        right.setMinimumSize(new java.awt.Dimension(0, 0));
         add(split, BorderLayout.CENTER);
         reload();
     }
@@ -222,6 +242,17 @@ public final class HistoryPanel extends JPanel {
 
     // ---- renderers ----------------------------------------------------------------------------
 
+    /** Plain text cell whose tooltip carries the full value (parameters are often wider than the column). */
+    private static final class TooltipRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable t, Object v, boolean sel, boolean focus, int r, int c) {
+            super.getTableCellRendererComponent(t, v, sel, focus, r, c);
+            String s = v == null ? "" : v.toString();
+            setToolTipText(s.isEmpty() ? null : s);
+            return this;
+        }
+    }
+
     /** Origin as a small lettered chip: M enu, S earch, K shortcut, C anvas, P anel, T yped NL, V oice, m acro, R eplay, O bserved. */
     private static final class OriginRenderer extends DefaultTableCellRenderer {
         @Override
@@ -261,10 +292,10 @@ public final class HistoryPanel extends JPanel {
                 case UNRECORDABLE -> "UNRECORDABLE";
             };
             Color color = switch (p) {
-                case NATIVE -> new Color(0x2f6fdb);
-                case TYPED -> new Color(0x2a8a4a);
-                case LEGACY_DIALOG -> new Color(0xb07400);
-                case UNRECORDABLE -> new Color(0xc0262d);
+                case NATIVE -> Theme.isDark() ? new Color(0x7fb0ff) : new Color(0x2f6fdb);
+                case TYPED -> Theme.isDark() ? new Color(0x6fd08a) : new Color(0x2a8a4a);
+                case LEGACY_DIALOG -> Theme.isDark() ? new Color(0xf0b440) : new Color(0xb07400);
+                case UNRECORDABLE -> Theme.isDark() ? new Color(0xff7b7b) : new Color(0xc0262d);
             };
             setText(text);
             setFont(getFont().deriveFont(Font.BOLD, 11f));

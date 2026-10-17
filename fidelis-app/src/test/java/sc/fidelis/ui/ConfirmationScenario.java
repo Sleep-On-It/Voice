@@ -189,7 +189,12 @@ final class ConfirmationScenario {
         assertNotNull(fake.prompt, "a prompt is set as soon as the speech service attaches");
         assertTrue(fake.prompt.length() <= 560, "bounded to 560 characters, was " + fake.prompt.length());
         newImage("VocabCheckImage");
-        waitFor("prompt mentions the new document", () -> fake.prompt != null && fake.prompt.contains("VocabCheckImage"), 20);
+        try {
+            waitFor("prompt mentions the new document", () -> fake.prompt != null && fake.prompt.contains("VocabCheckImage"), 20);
+        } catch (AssertionError e) {
+            throw new AssertionError(e.getMessage() + "; prompt was \"" + fake.prompt + "\"; open documents "
+                    + engine.documents().stream().map(d -> d.title()).toList(), e);
+        }
         newImage("SecondVocabImage");
         waitFor("prompt mentions the second document", () -> fake.prompt.contains("SecondVocabImage"), 20);
         edt(() -> ws.commandBar().toggleMic());

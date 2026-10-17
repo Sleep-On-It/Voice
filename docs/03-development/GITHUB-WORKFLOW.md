@@ -19,10 +19,10 @@ assume another session can see your conversation.
 
 ## 1. Repositories (the one rule that must never be broken)
 
-- Work only in **`reverez/Voice`**. Its parent `Sleep-On-It/Voice`, Ayush's `AyushGupta05/Voice` (Luma, a separate project) and `Sleep-On-It/Fidelis` are read-only: never push, open PRs, comment or change settings there.
-- `gh` defaults to a fork's **parent** for PRs and issues. In every clone run `gh repo set-default reverez/Voice` once, and still pass `--repo reverez/Voice` explicitly to every `gh pr` and `gh issue` command.
-- Before any push: `git remote -v` must show `https://github.com/reverez/Voice.git` for the remote you push to.
-- Remote names: `<remote>` below means the remote that points at reverez/Voice: `origin` in a fresh clone, `voice` in the lead's existing worktrees (whose `origin` is the read-only `Sleep-On-It/Fidelis`).
+- The primary repository is **`Sleep-On-It/Voice`** (changed 17 Oct 2026; `reverez/Voice` is no longer required). Ayush's `AyushGupta05/Voice` (Luma, a separate project) and `Sleep-On-It/Fidelis` stay read-only.
+- In every clone run `gh repo set-default Sleep-On-It/Voice` once, and pass `--repo Sleep-On-It/Voice` explicitly to every `gh pr` and `gh issue` command.
+- Before any push: `git remote -v` must show `https://github.com/Sleep-On-It/Voice.git` for the remote you push to.
+- Remote names: `<remote>` below means the remote that points at Sleep-On-It/Voice (`origin` in a fresh clone).
 
 ## 2. Branches
 
@@ -65,7 +65,7 @@ python -I fidelis-app/tools/check_ownership.py --stream <engine|voice|ui>
 python -I fidelis-app/tools/build.py
 python -I fidelis-app/tools/test.py            # full suite on your branch head
 git push <remote> <your-branch>
-gh pr create --repo reverez/Voice --base development/fidelis-workstation --head <your-branch> --title "<area>: <what>" --body-file <file>
+gh pr create --repo Sleep-On-It/Voice --base development/fidelis-workstation --head <your-branch> --title "<area>: <what>" --body-file <file>
 ```
 
 The PR template asks for: linked issue (`Closes #n`); scope and changed-file summary; the ownership
@@ -78,7 +78,7 @@ One purpose per PR. Small PRs merge at checkpoints; a PR that cannot be reviewed
 
 ## 5. Merge authority and order
 
-- Only the integrator (Arnav) merges, with a merge commit (`gh pr merge <n> --repo reverez/Voice --merge`). No squash of shared history, no force-push, no merges into `main`.
+- Only the integrator (Arnav) merges, with a merge commit (`gh pr merge <n> --repo Sleep-On-It/Voice --merge`). No squash of shared history, no force-push, no merges into `main`.
 - At each checkpoint (I1 Sat 19:00, I2 Sat 21:30, I3 Sat 23:30, I4 Sun 09:00 BST) the order is: contract PRs, then engine, then voice, then UI. After each merge the next PR must be up to date with the integration branch (the author merges it in) and green.
 - After the merged head passes the full suite twice, the integrator records the SHA and counts on the master issue (#2).
 - Freeze at Sun 10:30 BST: only demo-blocking fixes, approved by all three in the master issue.
@@ -113,8 +113,8 @@ fixtures and models.
 Recovery after an interrupted or context-exhausted session:
 1. `git fetch <remote>`; `git switch <your-branch>`; `git status`; `git log --oneline -10`.
 2. Read `CLAUDE.md`, your execution brief, and your handoff file.
-3. `gh issue list --repo reverez/Voice --label owner:<name> --state open` and read the last comments on your `status:in-progress` issue.
-4. `gh pr list --repo reverez/Voice --head <your-branch>`.
+3. `gh issue list --repo Sleep-On-It/Voice --label owner:<name> --state open` and read the last comments on your `status:in-progress` issue.
+4. `gh pr list --repo Sleep-On-It/Voice --head <your-branch>`.
 5. Rebuild and re-run the last tests before continuing. If the working tree holds uncommitted changes you cannot explain, commit them on a new branch `wip/<name>-<time>` and report it instead of discarding them.
 
 When no eligible safe task remains: write a `HANDOFF:` comment on the master issue (what is done, what is

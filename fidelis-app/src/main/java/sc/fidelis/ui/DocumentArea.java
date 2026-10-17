@@ -230,6 +230,7 @@ public final class DocumentArea extends JPanel {
     record Snapshot(DocumentId doc, ImagePlus imp, String label) {}
 
     private final Map<DocumentId, Integer> inFlight = new java.util.HashMap<>();
+    private volatile String snapshotNote = "no command submitted yet";
 
     /**
      * Take the before-copy for a COMMAND of consequence AC3 or higher, on the submitting side and before the
@@ -258,10 +259,18 @@ public final class DocumentArea extends JPanel {
         boolean significant = ctx.engine.schema(req.commandId())
                 .map(s -> s.consequence().ordinal() >= sc.fidelis.engine.api.Enums.ConsequenceClass.AC3_REVERSIBLE_DATA.ordinal())
                 .orElse(false);
-        if (imp == null || !first || !significant || views.get(id) == null) return new Snapshot(id, null, label);
+        if (imp == null || !first || !significant || views.get(id) == null) {
+            snapshotNote = "no snapshot for '" + label + "': " + (imp == null ? "no image" : !first ? "another command in flight (" + inFlight.get(id) + ")"
+                    : !significant ? "not significant (" + req.commandId() + ")" : "no view");
+            return new Snapshot(id, null, label);
+        }
         long bytes = (long) imp.getWidth() * imp.getHeight() * Math.max(1, imp.getStackSize())
                 * (imp.getBitDepth() == 24 ? 4 : Math.max(1, imp.getBitDepth() / 8));
-        if (bytes > MAX_SNAPSHOT_BYTES || imp.getStack().isVirtual()) return new Snapshot(id, null, label);
+        if (bytes > MAX_SNAPSHOT_BYTES || imp.getStack().isVirtual()) {
+            snapshotNote = "no snapshot for '" + label + "': " + bytes + " bytes" + (imp.getStack().isVirtual() ? ", virtual stack" : "");
+            return new Snapshot(id, null, label);
+        }
+        snapshotNote = "snapshot taken for '" + label + "'";
         ImagePlus dup = imp.duplicate();
         if (dup == null) return new Snapshot(id, null, label);
         if (!imp.isComposite() && imp.getBitDepth() != 24) dup.setDisplayRange(imp.getDisplayRangeMin(), imp.getDisplayRangeMax());
@@ -279,8 +288,15 @@ public final class DocumentArea extends JPanel {
         boolean changed = r != null && r.state() == sc.fidelis.engine.api.Enums.OperationState.COMPLETED && r.digest() != null
                 && r.digest().changed().stream().anyMatch(c -> c.id().equals(s.doc()) && c.pixelsChanged());
         DocumentView v = views.get(s.doc());
+        snapshotNote = "after '" + s.label() + "': " + (r == null ? "failed exceptionally" : "state=" + r.state() + " changed="
+                + (r.digest() == null ? "none" : r.digest().changed())) + (changed && v != null ? "; before-copy kept" : "; before-copy dropped");
         if (changed && v != null) v.setBefore(s.imp(), s.label());
         else s.imp().flush();
+    }
+
+    /** What happened to the last before-copy (why none was taken, or the result it was judged on); for tests and logs. */
+    String snapshotDiagnostics() {
+        return snapshotNote + "; in flight: " + inFlight;
     }
 
     public DocumentView view(DocumentId id) {

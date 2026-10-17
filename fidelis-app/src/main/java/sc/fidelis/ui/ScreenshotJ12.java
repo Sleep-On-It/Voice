@@ -148,16 +148,6 @@ final class ScreenshotJ12 {
         });
     }
 
-    /** The second J-12 view: the same state with the ROI list tab in front. */
-    static void roiShot(Workspace w, Path out) throws Exception {
-        SwingUtilities.invokeAndWait(() -> {
-            w.docks().showRoi();
-            w.docks().applyDefaultDividers();
-        });
-        Thread.sleep(1000);
-        shoot(w, out.resolveSibling(out.getFileName().toString().replaceFirst("(\\.png)?$", "-roi.png")));
-    }
-
     static void reportNumbers(Workspace w) {
         var engine = w.engine();
         var rows = engine.results();

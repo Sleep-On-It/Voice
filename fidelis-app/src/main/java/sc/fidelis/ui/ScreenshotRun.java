@@ -57,7 +57,11 @@ final class ScreenshotRun {
                 Thread.sleep(1500);
                 if (opts.instruction() != null) ScreenshotJ12.instructionFlow(w, ctx, opts, out);
                 else shoot(w, out);
-                if (opts.instruction() == null && "j12".equals(opts.scenario())) ScreenshotJ12.roiShot(w, out);
+                SwingUtilities.invokeAndWait(() -> System.out.println("[fidelis] frame " + w.frame().getWidth() + "x" + w.frame().getHeight()
+                        + "; layout " + w.docks().describe()
+                        + (w.documents().focusedView() == null ? "" : "; canvas " + w.documents().focusedView().canvas().getWidth() + "x"
+                        + w.documents().focusedView().canvas().getHeight() + " at " + w.documents().focusedView().zoomLabelText())
+                        + "; results columns visible " + w.results().visibleColumnCount()));
                 if (opts.closeWindow()) ScreenshotJ12.closeWindowFlow(w); // a working quit never returns: the engine halts the JVM
                 return;
             }
@@ -195,7 +199,17 @@ final class ScreenshotRun {
     private static void scenario(Workspace w, UiContext ctx, String name, Path repo) throws Exception {
         var engine = w.engine();
         if (name.startsWith("j12")) {
-            ScreenshotJ12.j12(w, ctx, name, repo);
+            ScreenshotJ12.j12(w, ctx, name.equals("j12-editor") ? "j12" : name, repo);
+            if (name.equals("j12-editor")) { // the generated macro in the editor, stopped at the capability confirmation
+                SwingUtilities.invokeAndWait(() -> {
+                    w.editor().setText(engine.exportMacro());
+                    w.docks().showEditor();
+                    w.editor().run();
+                });
+                waitUntil(() -> w.editor().isAwaitingConfirmation(), 30);
+                System.out.println("[fidelis] macro editor: " + w.editor().statusText() + "; capabilities '" + w.editor().capabilitiesText()
+                        + "'; " + w.editor().text().lines().count() + " lines");
+            }
             return;
         }
         engine.open(repo.resolve("fixtures").resolve("two-squares.png")).get();

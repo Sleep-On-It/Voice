@@ -21,7 +21,7 @@ integration branch and the agent worktrees listed below.
 | Role | Location |
 |---|---|
 | Canonical remote | `reverez/Voice` (public fork of `Sleep-On-It/Voice`; contains the full Fidelis project). Remote name `voice` in the local checkouts. |
-| Preserved original | `Sleep-On-It/Fidelis`: do not modify. `Sleep-On-It/Voice`, `AyushGupta05/Voice` and Ayush's forks: never touch. |
+| Preserved original | `Sleep-On-It/Fidelis`: do not modify. `AyushGupta05/Voice` and Ayush's forks: never touch. `Sleep-On-It/Voice` is the primary repository since 17 Oct 2026. |
 | **Integration branch** | `development/fidelis-workstation` in worktree `C:\Users\arnav\Documents\dev\fidelis-dev` (from fork `main` @ `fa70497`) |
 | Architecture-gate review docs | `review/architecture-gate` in `C:\Users\arnav\Documents\dev\fidelis-arch-gate` (lead) |
 | Validation spikes | `spike/architecture-gate` in `C:\Users\arnav\Documents\dev\fidelis-spikes` (Sonnet spike agent, still running EXP-02…05; **do not touch**) |

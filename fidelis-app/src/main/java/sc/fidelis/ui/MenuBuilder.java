@@ -81,10 +81,15 @@ final class MenuBuilder {
                 menu.add(toMenu(c));
             } else {
                 JMenuItem it = c.checkbox() ? new JCheckBoxMenuItem(c.label()) : new JMenuItem(c.label());
-                if (c.accelerator() != null) it.setAccelerator(c.accelerator());
                 String id = c.commandId();
+                if (c.accelerator() != null) {
+                    it.setAccelerator(c.accelerator());
+                    ctx.registerAccelerator(c.accelerator(), id);
+                }
                 it.setToolTipText(id.substring(4));
-                it.addActionListener(e -> ctx.runCommand(id, Origin.MENU));
+                // Swing fires the item with the key event's modifiers when its accelerator triggered it
+                it.addActionListener(e -> ctx.runCommand(id,
+                        (e.getModifiers() & java.awt.event.ActionEvent.CTRL_MASK) != 0 ? Origin.SHORTCUT : Origin.MENU));
                 menu.add(it);
             }
         }
@@ -136,11 +141,14 @@ final class MenuBuilder {
         right.addActionListener(e -> ctx.docks().setRightVisible(right.isSelected()));
         JCheckBoxMenuItem bottom = new JCheckBoxMenuItem("Bottom dock", true);
         bottom.addActionListener(e -> ctx.docks().setBottomCollapsed(!bottom.isSelected()));
+        JCheckBoxMenuItem labels = new JCheckBoxMenuItem("Labelled tools", false);
+        labels.addActionListener(e -> workspace.tools().setLabelled(labels.isSelected()));
         m.addMenuListener(new MenuListener() {
             @Override
             public void menuSelected(MenuEvent e) {
                 right.setSelected(ctx.docks().isRightVisible());
                 bottom.setSelected(!ctx.docks().isBottomCollapsed());
+                labels.setSelected(workspace.tools().isLabelled());
                 light.setSelected(!Theme.isDark());
                 dark.setSelected(Theme.isDark());
             }
@@ -155,6 +163,7 @@ final class MenuBuilder {
         });
         m.add(right);
         m.add(bottom);
+        m.add(labels);
         m.addSeparator();
         m.add(panelItem("Parameters", () -> ctx.docks().showParameters()));
         m.add(panelItem("Brightness/Contrast", () -> ctx.docks().showDisplay()));
@@ -162,6 +171,10 @@ final class MenuBuilder {
         m.add(panelItem("ROI list", () -> ctx.docks().showRoi()));
         m.add(panelItem("Results", () -> ctx.docks().showResults()));
         m.add(panelItem("History & macro", () -> ctx.docks().showHistory()));
+        JMenuItem editor = panelItem("Macro editor", () -> ctx.docks().showEditor());
+        editor.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_E,
+                java.awt.event.InputEvent.CTRL_DOWN_MASK | java.awt.event.InputEvent.ALT_DOWN_MASK)); // DEC-031: product-only keys are Ctrl+Alt
+        m.add(editor);
         m.add(panelItem("Log", () -> ctx.docks().showLog()));
         m.add(panelItem("Activity", () -> ctx.docks().showActivity()));
         m.addSeparator();

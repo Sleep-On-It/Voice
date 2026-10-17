@@ -73,8 +73,9 @@ public final class ActivityPanel extends JPanel {
             update();
         }
 
+        /** Queued or running: a parked operation (awaiting the user's confirmation) is not activity and cannot be cancelled. */
         boolean active() {
-            return !UiContext.terminal(current);
+            return !UiContext.terminal(current) && current != OperationState.AWAITING_CONFIRMATION;
         }
 
         void update() {

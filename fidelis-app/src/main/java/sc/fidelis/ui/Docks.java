@@ -15,45 +15,92 @@ import javax.swing.SwingUtilities;
 import com.formdev.flatlaf.FlatClientProperties;
 
 /**
- * Right and bottom docks (docs D12 section 2): fixed regions with tabs, collapsible, no third-party
- * docking library (DP-D12-02). Collapsing the right dock leaves a thin restore strip; collapsing the
- * bottom dock leaves its tab strip.
+ * Right and bottom docks (docs D12 section 2, DEC-029): fixed regions built from {@link JSplitPane} and
+ * {@link JTabbedPane} only, no third-party docking library. Each dock holds <em>two</em> independent tab
+ * groups so that the demo state is visible at once (issue #15): the right column stacks the contextual tool
+ * panels (Parameters, B&amp;C, Threshold) above the ROI list; the bottom row puts Results beside
+ * History &amp; macro / Log / Activity. Every divider is draggable; {@link #applyDefaultDividers()} restores the
+ * proportions below for the current frame size. Collapsing the right dock leaves a thin restore strip;
+ * collapsing the bottom dock leaves its two tab strips.
  */
 final class Docks {
+    /** Right column width; a wide frame (1920 px class) gets a little more for the ROI list. */
     static final int RIGHT_WIDTH = 380;
-    static final int BOTTOM_HEIGHT = 230;
+    static final int RIGHT_WIDTH_WIDE = 420;
+    static final int WIDE_FRAME = 1800;
+    /** Bottom row height: a share of the dock area, bounded so Results keep a useful number of rows. */
+    static final double BOTTOM_FRACTION = 0.30;
+    static final int BOTTOM_MIN = 220;
+    static final int BOTTOM_MAX = 320;
+    /** Share of the bottom row given to Results (left) and of the right column given to the tool panels (top). */
+    static final double RESULTS_FRACTION = 0.46;
+    static final double TOOLS_FRACTION = 0.52;
     private static final int STRIP = 24;
+    private static final int COLLAPSED_BOTTOM = 30;
 
-    final JTabbedPane right = new JTabbedPane();
+    /** Upper right group: Parameters, B&amp;C, Threshold. */
+    final JTabbedPane tools = new JTabbedPane();
+    /** Lower right group: ROI list. */
+    final JTabbedPane roiGroup = new JTabbedPane();
+    /** Bottom-left group: Results. */
+    final JTabbedPane resultsGroup = new JTabbedPane();
+    /** Bottom-right group: History &amp; macro, Log, Activity. */
     final JTabbedPane bottom = new JTabbedPane();
+
     private final JSplitPane horizontal = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
     private final JSplitPane vertical = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+    private final JSplitPane rightColumn = new JSplitPane(JSplitPane.VERTICAL_SPLIT);
+    private final JSplitPane bottomRow = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
     private final JPanel rightStrip = new JPanel(new BorderLayout());
     private boolean rightVisible = true;
     private boolean bottomCollapsed;
-    private int lastBottomHeight = BOTTOM_HEIGHT;
+    private int lastBottomHeight = BOTTOM_MIN;
     private int lastBottomTab = 0;
     private int lastRightWidth = RIGHT_WIDTH;
 
-    private JComponent thresholdTab;
+    private JComponent documentsPane;
+    private JComponent parametersTab;
     private JComponent displayTab;
+    private JComponent thresholdTab;
+    private JComponent roiTab;
+    private JComponent resultsTab;
+    private JComponent historyTab;
+    private JComponent editorTab;
+    private JComponent logTab;
+    private JComponent activityTab;
 
     JComponent build(JComponent documents, JComponent parameters, JComponent display, JComponent threshold,
-                     JComponent roi, JComponent results, JComponent history, JComponent log, JComponent activity) {
+                     JComponent roi, JComponent results, JComponent history, JComponent editor, JComponent log, JComponent activity) {
+        documentsPane = documents;
+        parametersTab = parameters;
         displayTab = display;
         thresholdTab = threshold;
-        right.putClientProperty(FlatClientProperties.STYLE, "tabInsets: 4,8,4,8");
-        right.addTab("Parameters", parameters);
-        right.addTab("B&C", display);
-        right.addTab("Threshold", threshold);
-        right.addTab("ROI list", roi);
-        right.addTab("Results", results);
+        roiTab = roi;
+        resultsTab = results;
+        historyTab = history;
+        editorTab = editor;
+        logTab = log;
+        activityTab = activity;
+        for (JTabbedPane p : new JTabbedPane[] {tools, roiGroup, resultsGroup, bottom})
+            p.putClientProperty(FlatClientProperties.STYLE, "tabInsets: 4,8,4,8");
+        tools.addTab("Parameters", parameters);
+        tools.addTab("B&C", display);
+        tools.addTab("Threshold", threshold);
+        roiGroup.addTab("ROI list", roi);
+        resultsGroup.addTab("Results", results);
         bottom.addTab("History & macro", history);
+        bottom.addTab("Macro editor", editor);
         bottom.addTab("Log", log);
         bottom.addTab("Activity", activity);
 
-        right.putClientProperty(FlatClientProperties.TABBED_PANE_TRAILING_COMPONENT, collapseButton(UiIcons.Kind.RIGHT, "Collapse the right dock", () -> setRightVisible(false)));
-        bottom.putClientProperty(FlatClientProperties.TABBED_PANE_TRAILING_COMPONENT, collapseButton(UiIcons.Kind.DOWN, "Collapse the bottom dock", () -> setBottomCollapsed(true)));
+        tools.putClientProperty(FlatClientProperties.TABBED_PANE_TRAILING_COMPONENT,
+                collapseButton(UiIcons.Kind.RIGHT, "Collapse the right dock", () -> setRightVisible(false)));
+        bottom.putClientProperty(FlatClientProperties.TABBED_PANE_TRAILING_COMPONENT,
+                collapseButton(UiIcons.Kind.DOWN, "Collapse the bottom dock", () -> setBottomCollapsed(true)));
+        // Selecting any tab of a collapsed bottom row expands it again
+        resultsGroup.addChangeListener(e -> {
+            if (bottomCollapsed && resultsGroup.getSelectedIndex() >= 0) setBottomCollapsed(false);
+        });
         bottom.addChangeListener(e -> {
             if (bottomCollapsed && bottom.getSelectedIndex() >= 0) setBottomCollapsed(false);
             else if (bottom.getSelectedIndex() >= 0) lastBottomTab = bottom.getSelectedIndex();
@@ -68,16 +115,32 @@ final class Docks {
         rightStrip.setPreferredSize(new Dimension(STRIP, 100));
         rightStrip.setMinimumSize(new Dimension(STRIP, 0));
 
-        right.setMinimumSize(new Dimension(220, 100));
-        bottom.setMinimumSize(new Dimension(100, 28));
+        tools.setMinimumSize(new Dimension(220, 100));
+        roiGroup.setMinimumSize(new Dimension(220, 60));
+        resultsGroup.setMinimumSize(new Dimension(160, 28));
+        bottom.setMinimumSize(new Dimension(160, 28));
+
+        rightColumn.setTopComponent(tools);
+        rightColumn.setBottomComponent(roiGroup);
+        rightColumn.setResizeWeight(TOOLS_FRACTION);
+        rightColumn.setContinuousLayout(true);
+        rightColumn.setBorder(null);
+        rightColumn.setMinimumSize(new Dimension(220, 160));
+
+        bottomRow.setLeftComponent(resultsGroup);
+        bottomRow.setRightComponent(bottom);
+        bottomRow.setResizeWeight(RESULTS_FRACTION);
+        bottomRow.setContinuousLayout(true);
+        bottomRow.setBorder(null);
+        bottomRow.setMinimumSize(new Dimension(320, 28));
 
         horizontal.setLeftComponent(documents);
-        horizontal.setRightComponent(right);
+        horizontal.setRightComponent(rightColumn);
         horizontal.setResizeWeight(1.0);
         horizontal.setContinuousLayout(true);
         horizontal.setBorder(null);
         vertical.setTopComponent(horizontal);
-        vertical.setBottomComponent(bottom);
+        vertical.setBottomComponent(bottomRow);
         vertical.setResizeWeight(1.0);
         vertical.setContinuousLayout(true);
         vertical.setBorder(null);
@@ -98,29 +161,50 @@ final class Docks {
         return p;
     }
 
-    /** Default positions: right dock 380 px wide, bottom dock 230 px high. Call after the frame has a size. */
+    // ---- default geometry -----------------------------------------------------------------------
+
+    static int defaultRightWidth(int dockAreaWidth) {
+        return dockAreaWidth >= WIDE_FRAME ? RIGHT_WIDTH_WIDE : RIGHT_WIDTH;
+    }
+
+    static int defaultBottomHeight(int dockAreaHeight) {
+        return (int) Math.max(BOTTOM_MIN, Math.min(BOTTOM_MAX, Math.round(dockAreaHeight * BOTTOM_FRACTION)));
+    }
+
+    /** Default positions for the current size: right column, bottom row, and both inner dividers. Call after the frame has a size. */
     void resetLayout() {
         setRightVisible(true);
         setBottomCollapsed(false);
-        SwingUtilities.invokeLater(() -> {
-            horizontal.setDividerLocation(Math.max(200, horizontal.getWidth() - RIGHT_WIDTH - horizontal.getDividerSize()));
-            vertical.setDividerLocation(Math.max(200, vertical.getHeight() - BOTTOM_HEIGHT - vertical.getDividerSize()));
-            lastRightWidth = RIGHT_WIDTH;
-            lastBottomHeight = BOTTOM_HEIGHT;
-        });
+        SwingUtilities.invokeLater(this::applyDefaultDividers);
     }
 
     /** Apply the default divider positions immediately (the caller has validated the frame). */
     void applyDefaultDividers() {
-        horizontal.setDividerLocation(Math.max(200, horizontal.getWidth() - RIGHT_WIDTH - horizontal.getDividerSize()));
-        vertical.setDividerLocation(Math.max(200, vertical.getHeight() - BOTTOM_HEIGHT - vertical.getDividerSize()));
+        int w = horizontal.getWidth();
+        int h = vertical.getHeight();
+        if (w <= 0 || h <= 0) return;
+        int rw = defaultRightWidth(w);
+        int bh = defaultBottomHeight(h);
+        int top = Math.max(200, h - bh - vertical.getDividerSize());
+        horizontal.setDividerLocation(Math.max(200, w - rw - horizontal.getDividerSize()));
+        vertical.setDividerLocation(top);
+        // The nested splits are sized by the outer dividers: lay them out first, otherwise a divider placed beyond
+        // the nested pane's current extent is clamped (JSplitPane is a validate root; this is synchronous).
+        vertical.validate();
+        horizontal.validate();
+        rightColumn.setDividerLocation((int) Math.round(top * TOOLS_FRACTION));
+        bottomRow.setDividerLocation((int) Math.round(w * RESULTS_FRACTION));
+        lastRightWidth = rw;
+        lastBottomHeight = bh;
     }
+
+    // ---- visibility -----------------------------------------------------------------------------
 
     void setRightVisible(boolean visible) {
         if (visible == rightVisible) return;
         if (!visible) lastRightWidth = Math.max(220, horizontal.getWidth() - horizontal.getDividerLocation() - horizontal.getDividerSize());
         rightVisible = visible;
-        horizontal.setRightComponent(visible ? right : rightStrip);
+        horizontal.setRightComponent(visible ? rightColumn : rightStrip);
         int w = visible ? lastRightWidth : STRIP;
         SwingUtilities.invokeLater(() -> horizontal.setDividerLocation(horizontal.getWidth() - w - horizontal.getDividerSize()));
     }
@@ -134,9 +218,11 @@ final class Docks {
         bottomCollapsed = collapsed;
         if (collapsed) {
             lastBottomHeight = Math.max(120, vertical.getHeight() - vertical.getDividerLocation() - vertical.getDividerSize());
+            resultsGroup.setSelectedIndex(-1);
             bottom.setSelectedIndex(-1);
-            SwingUtilities.invokeLater(() -> vertical.setDividerLocation(vertical.getHeight() - 30 - vertical.getDividerSize()));
+            SwingUtilities.invokeLater(() -> vertical.setDividerLocation(vertical.getHeight() - COLLAPSED_BOTTOM - vertical.getDividerSize()));
         } else {
+            if (resultsGroup.getSelectedIndex() < 0) resultsGroup.setSelectedIndex(0);
             if (bottom.getSelectedIndex() < 0) bottom.setSelectedIndex(Math.min(lastBottomTab, bottom.getTabCount() - 1));
             SwingUtilities.invokeLater(() -> vertical.setDividerLocation(vertical.getHeight() - lastBottomHeight - vertical.getDividerSize()));
         }
@@ -151,47 +237,57 @@ final class Docks {
         setBottomCollapsed(true);
     }
 
-    private void showRight(int i) {
+    // ---- show a panel ---------------------------------------------------------------------------
+
+    private void showTools(JComponent tab) {
         setRightVisible(true);
-        right.setSelectedIndex(i);
+        tools.setSelectedComponent(tab);
     }
 
-    private void showBottom(int i) {
+    private void showBottom(JComponent tab) {
         if (bottomCollapsed) setBottomCollapsed(false);
-        bottom.setSelectedIndex(i);
+        bottom.setSelectedComponent(tab);
     }
 
     void showParameters() {
-        showRight(0);
+        showTools(parametersTab);
     }
 
     void showDisplay() {
-        showRight(right.indexOfComponent(displayTab));
+        showTools(displayTab);
     }
 
     void showThreshold() {
-        showRight(right.indexOfComponent(thresholdTab));
+        showTools(thresholdTab);
     }
 
     void showRoi() {
-        showRight(3);
+        setRightVisible(true);
+        roiGroup.setSelectedComponent(roiTab);
     }
 
     void showResults() {
-        showRight(4);
+        if (bottomCollapsed) setBottomCollapsed(false);
+        resultsGroup.setSelectedComponent(resultsTab);
     }
 
     void showHistory() {
-        showBottom(0);
+        showBottom(historyTab);
+    }
+
+    void showEditor() {
+        showBottom(editorTab);
     }
 
     void showLog() {
-        showBottom(1);
+        showBottom(logTab);
     }
 
     void showActivity() {
-        showBottom(2);
+        showBottom(activityTab);
     }
+
+    // ---- introspection (tests, screenshot runs) --------------------------------------------------
 
     JSplitPane horizontalSplit() {
         return horizontal;
@@ -199,5 +295,24 @@ final class Docks {
 
     JSplitPane verticalSplit() {
         return vertical;
+    }
+
+    JSplitPane rightColumnSplit() {
+        return rightColumn;
+    }
+
+    JSplitPane bottomRowSplit() {
+        return bottomRow;
+    }
+
+    /** One line with the on-screen size of every region; sizes are read from the components, not computed. */
+    String describe() {
+        return "documents=" + geometry(documentsPane) + " tools=" + geometry(tools) + " roi=" + geometry(roiTab)
+                + " results=" + geometry(resultsTab) + " history=" + geometry(historyTab)
+                + " rightVisible=" + rightVisible + " bottomCollapsed=" + bottomCollapsed;
+    }
+
+    private static String geometry(JComponent c) {
+        return c == null ? "none" : (c.isShowing() ? "" : "hidden:") + c.getWidth() + "x" + c.getHeight();
     }
 }

@@ -796,6 +796,11 @@ public final class DocumentView extends JPanel {
 
     // ---- accessors for tests and the screenshot ----------------------------------------------
 
+    /** The zoom read-out as shown in the target strip (for example {@code 200%}). */
+    String zoomLabelText() {
+        return zoomLabel.getText();
+    }
+
     public double magnification() {
         return canvas.getMagnification();
     }

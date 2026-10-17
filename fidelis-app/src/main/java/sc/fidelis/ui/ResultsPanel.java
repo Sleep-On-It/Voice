@@ -113,6 +113,33 @@ public final class ResultsPanel extends JPanel {
         return Math.max(minimum, w);
     }
 
+    /**
+     * Number of measurement columns (excluding the row index and the Label) whose full width lies inside the
+     * table's viewport without horizontal scrolling: the visibility criterion of issue #15 (at least six).
+     */
+    int visibleColumnCount() {
+        java.awt.Container vp = table.getParent();
+        int available = vp instanceof javax.swing.JViewport v ? v.getExtentSize().width : table.getWidth();
+        int x = 0;
+        int n = 0;
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            int w = table.getColumnModel().getColumn(i).getWidth();
+            if (x + w > available) break;
+            x += w;
+            if (i >= 2) n++;
+        }
+        return n;
+    }
+
+    /** Number of measurement columns in the model (the headings of the engine's Results table). */
+    int columnCount() {
+        return headings.size();
+    }
+
+    String headerText() {
+        return header.getText();
+    }
+
     public String tsv() {
         StringBuilder sb = new StringBuilder();
         for (int c = 0; c < model.getColumnCount(); c++) sb.append(c == 0 ? "" : "\t").append(model.getColumnName(c));

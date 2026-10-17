@@ -5,9 +5,9 @@ FlatLaf) with real IJ1 canvases, real commands, real macros, and local speech/ty
 *propose* operations for confirmation. It is not a reimplementation of image processing.
 
 ## Hard rules
-- Work only in the GitHub repository **`reverez/Voice`**. `Sleep-On-It/Voice`, `AyushGupta05/Voice` and
-  `Sleep-On-It/Fidelis` are read-only: never push, open PRs, comment or change settings there. Pass
-  `--repo reverez/Voice` to every `gh` command (gh otherwise defaults to the fork's parent).
+- The primary GitHub repository is **`Sleep-On-It/Voice`** (changed 17 Oct 2026; `reverez/Voice` is no longer required).
+  `AyushGupta05/Voice` (Ayush's separate Luma project) and `Sleep-On-It/Fidelis` (the preserved original) stay
+  read-only. Pass `--repo Sleep-On-It/Voice` to every `gh` command.
 - One branch per developer (`feat/arnav-engine`, `feat/ayush-voice`, `feat/alex-ui`); PRs into
   `development/fidelis-workstation`; only the integrator (Arnav) merges. Never force-push, rewrite pushed
   history, delete branches or touch `main`.

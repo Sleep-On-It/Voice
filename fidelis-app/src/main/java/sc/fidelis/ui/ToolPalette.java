@@ -43,6 +43,7 @@ public final class ToolPalette extends JPanel {
             b.setMinimumSize(d);
             b.addActionListener(e -> choose(t));
             b.putClientProperty("toolId", t.id());
+            b.putClientProperty("toolName", t.name());
             group.add(b);
             buttons.add(b);
             add(b);
@@ -52,6 +53,30 @@ public final class ToolPalette extends JPanel {
         sync = new Timer(250, e -> readBack());
         sync.start();
         readBack();
+    }
+
+    private boolean labelled;
+
+    /** Show each tool's name under its icon (issue #20); icon-only by default so the palette stays 34 px wide. */
+    void setLabelled(boolean on) {
+        labelled = on;
+        for (JToggleButton b : buttons) {
+            b.setText(on ? String.valueOf(b.getClientProperty("toolName")) : null);
+            b.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+            b.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+            b.setIconTextGap(1);
+            b.setFont(b.getFont().deriveFont(on ? 10f : (float) Theme.UI_FONT_SIZE));
+            Dimension d = on ? new Dimension(66, 46) : new Dimension(34, 30);
+            b.setPreferredSize(d);
+            b.setMaximumSize(d);
+            b.setMinimumSize(d);
+        }
+        revalidate();
+        repaint();
+    }
+
+    boolean isLabelled() {
+        return labelled;
     }
 
     private void choose(ToolIcons.Tool t) {

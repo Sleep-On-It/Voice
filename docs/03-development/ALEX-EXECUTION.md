@@ -17,9 +17,9 @@ For Alex's Claude Code session. Self-contained: you do not need the planning con
 
 ## Identity and repository
 - Developer: Alex. **GitHub username not yet confirmed**; collaborator access on `reverez/Voice` is pending. Check `gh api user --jq .login` and `gh api repos/reverez/Voice --jq .permissions.push` before pushing.
-- Repository: **`reverez/Voice` only.** `Sleep-On-It/Voice`, `AyushGupta05/Voice` and `Sleep-On-It/Fidelis` are read-only.
+- Repository: **`Sleep-On-It/Voice`** (primary since 17 Oct 2026; `reverez/Voice` no longer required). `AyushGupta05/Voice` and `Sleep-On-It/Fidelis` are read-only.
 - Branch: `feat/alex-ui` (created at `215fdb8`). PRs into `development/fidelis-workstation`.
-- Fresh clone: `git clone https://github.com/reverez/Voice.git fidelis; cd fidelis; gh repo set-default reverez/Voice; git switch feat/alex-ui` (remote name `origin`).
+- Fresh clone: `git clone https://github.com/reverez/Voice.git fidelis; cd fidelis; gh repo set-default Sleep-On-It/Voice; git switch feat/alex-ui` (remote name `origin`).
 - Until access is granted: work and commit locally; do not push anywhere else.
 
 ## You own
@@ -61,7 +61,7 @@ Open every screenshot you cite and inspect it; describe what you checked in the 
 ```powershell
 git fetch origin; git switch feat/alex-ui; git merge origin/development/fidelis-workstation
 git push origin feat/alex-ui
-gh pr create --repo reverez/Voice --base development/fidelis-workstation --head feat/alex-ui --title "ui: <what>" --body-file pr.md
+gh pr create --repo Sleep-On-It/Voice --base development/fidelis-workstation --head feat/alex-ui --title "ui: <what>" --body-file pr.md
 ```
 
 ## Communication
@@ -77,12 +77,12 @@ Every completed unit and every 20 to 30 minutes: commit, push, update `docs/03-d
 
 ```text
 You are Alex's Claude Code session for Fidelis (desktop UI and interactive image workspace). Work only in
-the GitHub repository reverez/Voice on branch feat/alex-ui, PRs into development/fidelis-workstation. Never
-touch Sleep-On-It/Voice, AyushGupta05/Voice or Sleep-On-It/Fidelis; never force-push, rewrite history or
-delete branches. Run `gh repo set-default reverez/Voice` once and pass --repo reverez/Voice to every gh
+the GitHub repository Sleep-On-It/Voice on branch feat/alex-ui, PRs into development/fidelis-workstation. Never
+touch AyushGupta05/Voice or Sleep-On-It/Fidelis; never force-push, rewrite history or
+delete branches. Run `gh repo set-default Sleep-On-It/Voice` once and pass --repo Sleep-On-It/Voice to every gh
 command.
 First read CLAUDE.md, docs/03-development/ALEX-EXECUTION.md, WORKSTREAM-CONTRACTS.md, GITHUB-WORKFLOW.md
-and docs/03-development/handoffs/ALEX.md. Then run `gh issue list --repo reverez/Voice --label owner:alex
+and docs/03-development/handoffs/ALEX.md. Then run `gh issue list --repo Sleep-On-It/Voice --label owner:alex
 --state open`; do #3 (environment), then #15 (demo layout), #16, #19, the #6 adoption, #17, #18 and #20 in
 that order, respecting the dependencies in each issue. Only edit sc.fidelis.ui and your own docs (check with
 fidelis-app/tools/check_ownership.py --stream ui); engine, NL and speech changes go to their owners through

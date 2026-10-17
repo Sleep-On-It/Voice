@@ -22,7 +22,7 @@ the test suite, not estimated. Read `ACTIVE-DEVELOPMENT.md` for the running reco
 
 | Item | Value |
 |---|---|
-| Authorised remote | `reverez/Voice` (`voice`). Never push to `Sleep-On-It/Voice`, `AyushGupta05/Voice` or `Sleep-On-It/Fidelis`; never merge into `main`; never force-push. |
+| Authorised remote | `Sleep-On-It/Voice` (primary since 17 Oct 2026; `reverez/Voice` no longer required). Never push to `AyushGupta05/Voice` or `Sleep-On-It/Fidelis`; never merge into `main`; never force-push. |
 | Integration branch | `development/fidelis-workstation` — **this is the baseline**. All agent branches are merged into it (non-fast-forward, so their commits are published through it). |
 | Agent branches (merged, pushed for reference) | `agent/engine` (A1), `agent/ui` (A2), `agent/voice` (A3), `agent/verify` (A4) |
 | Earlier branches | `review/architecture-gate` (adversarial review R01), `spike/architecture-gate` (EXP-01…06), `migration/import-fidelis` (history import), `main` (fa70497, untouched) |

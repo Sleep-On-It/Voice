@@ -59,6 +59,7 @@ public final class CommandBar extends JPanel {
     private boolean spoken;
     private SpeechService speech;
     private SpeechService.State speechState = SpeechService.State.UNAVAILABLE;
+    private SpeechService.Listener speechListener;
     private volatile Timer interpretClock;
 
     CommandBar(UiContext ctx) {
@@ -356,6 +357,7 @@ public final class CommandBar extends JPanel {
     }
 
     private void bindSpeech(SpeechService s) {
+        detachSpeech();
         speech = s;
         if (s == null) return;
         refreshVocabulary();
@@ -364,7 +366,7 @@ public final class CommandBar extends JPanel {
             w.onTranscript(t -> SwingUtilities.invokeLater(() -> deliver(t)));
         }
         speechState = s.state();
-        s.addListener(new SpeechService.Listener() {
+        speechListener = new SpeechService.Listener() {
             @Override
             public void stateChanged(SpeechService.State state) {
                 SwingUtilities.invokeLater(() -> {
@@ -372,7 +374,14 @@ public final class CommandBar extends JPanel {
                     updateMic();
                 });
             }
-        });
+        };
+        s.addListener(speechListener);
+    }
+
+    /** Stop listening to the speech service (a disposed workspace must not keep receiving its events, #16). */
+    void detachSpeech() {
+        if (speech != null && speechListener != null) speech.removeListener(speechListener);
+        speechListener = null;
     }
 
     void toggleMic() {

@@ -17,9 +17,9 @@ For Ayush's Claude Code session. Self-contained: you do not need the planning co
 
 ## Identity and repository
 - Developer: Ayush, GitHub `AyushGupta05` (identity known; **collaborator access on `reverez/Voice` is pending** - check `gh api repos/reverez/Voice --jq .permissions.push` returns `true` before pushing).
-- Repository: **`reverez/Voice` only.** Your own `AyushGupta05/Voice` is the separate Luma/QuPath project: do not use it, push to it, or open PRs from it. `Sleep-On-It/Voice` and `Sleep-On-It/Fidelis` are read-only.
+- Repository: **`Sleep-On-It/Voice`** (primary since 17 Oct 2026; `reverez/Voice` no longer required). Your own `AyushGupta05/Voice` is the separate Luma/QuPath project: do not use it, push to it, or open PRs from it. `Sleep-On-It/Fidelis` is read-only.
 - Branch: `feat/ayush-voice` (created at `215fdb8`). PRs into `development/fidelis-workstation`.
-- Fresh clone: `git clone https://github.com/reverez/Voice.git fidelis; cd fidelis; gh repo set-default reverez/Voice; git switch feat/ayush-voice` (remote name `origin`).
+- Fresh clone: `git clone https://github.com/reverez/Voice.git fidelis; cd fidelis; gh repo set-default Sleep-On-It/Voice; git switch feat/ayush-voice` (remote name `origin`).
 - Until access is granted: work and commit locally; keep `git log` as your record; do not push anywhere else.
 
 ## You own
@@ -62,7 +62,7 @@ python -I fidelis-app/tools/check_ownership.py --stream voice
 ```powershell
 git fetch origin; git switch feat/ayush-voice; git merge origin/development/fidelis-workstation
 git push origin feat/ayush-voice
-gh pr create --repo reverez/Voice --base development/fidelis-workstation --head feat/ayush-voice --title "voice: <what>" --body-file pr.md
+gh pr create --repo Sleep-On-It/Voice --base development/fidelis-workstation --head feat/ayush-voice --title "voice: <what>" --body-file pr.md
 ```
 
 ## Communication
@@ -78,12 +78,12 @@ Every completed unit and every 20 to 30 minutes: commit, push, update `docs/03-d
 
 ```text
 You are Ayush's Claude Code session for Fidelis (local speech and natural-language commands). Work only in
-the GitHub repository reverez/Voice on branch feat/ayush-voice, PRs into development/fidelis-workstation.
+the GitHub repository Sleep-On-It/Voice on branch feat/ayush-voice, PRs into development/fidelis-workstation.
 Never use, push to or open PRs from AyushGupta05/Voice (that is the separate Luma project), and never touch
-Sleep-On-It/Voice or Sleep-On-It/Fidelis; never force-push, rewrite history or delete branches. Run
-`gh repo set-default reverez/Voice` once and pass --repo reverez/Voice to every gh command.
+or Sleep-On-It/Fidelis; never force-push, rewrite history or delete branches. Run
+`gh repo set-default Sleep-On-It/Voice` once and pass --repo Sleep-On-It/Voice to every gh command.
 First read CLAUDE.md, docs/03-development/AYUSH-EXECUTION.md, WORKSTREAM-CONTRACTS.md, GITHUB-WORKFLOW.md
-and docs/03-development/handoffs/AYUSH.md. Then run `gh issue list --repo reverez/Voice --label owner:ayush
+and docs/03-development/handoffs/AYUSH.md. Then run `gh issue list --repo Sleep-On-It/Voice --label owner:ayush
 --state open`; do #3 (environment), then #11 (live microphone) and #12 (demo phrases), then #14, the #6
 adoption and #13 in that order. Only edit sc.fidelis.nl, sc.fidelis.speech, speech/ and your own docs (check
 with fidelis-app/tools/check_ownership.py --stream voice); the NlService and SpeechService interfaces are

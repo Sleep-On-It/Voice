@@ -175,9 +175,17 @@ final class U2Scenario {
         blur.put("sigma", 2.0);
         blur.put("scaled", false);
         blur.put("stack", false);
-        edt(() -> ws.context().submit(ActionRequest.command(Origin.MENU, "ij1:Process>Filters>Gaussian Blur...", blur, ws.context().target()),
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.CompletableFuture<sc.fidelis.engine.api.ActionResult>[] fut = new java.util.concurrent.CompletableFuture[1];
+        edt(() -> fut[0] = ws.context().submit(ActionRequest.command(Origin.MENU, "ij1:Process>Filters>Gaussian Blur...", blur, ws.context().target()),
                 "Gaussian Blur..."));
-        waitFor("before snapshot", v::hasBefore, 30);
+        try {
+            waitFor("before snapshot", v::hasBefore, 30);
+        } catch (AssertionError e) {
+            String result = !fut[0].isDone() ? "blur still running" : fut[0].isCompletedExceptionally() ? "blur failed: " + fut[0].handle((r, t) -> String.valueOf(t)).join()
+                    : "blur result: state=" + fut[0].join().state() + " digest=" + fut[0].join().digest();
+            throw new AssertionError(e.getMessage() + " (" + result + "; " + ws.documents().snapshotDiagnostics() + ")", e);
+        }
         assertNotEquals(before, pixelHash(imp), "the blur must have changed pixels");
         assertEquals(before, pixelHash(v.beforeImagePlus()), "the snapshot is the real pre-action pixel copy");
 
