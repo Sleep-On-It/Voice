@@ -39,7 +39,9 @@ Each launcher writes the application profile to `.local/state/app`, so the compa
 The Fidelis workstation also runs on its own, without Penny: `python3 -I fidelis-app/tools/run.py --isolated-home`
 (typed commands, the local Whisper push-to-talk and the deterministic interpreter with its proposal sheet).
 
-## Setup (macOS, Apple silicon)
+## Setup
+
+### macOS (Apple silicon): the whole system
 
 Xcode command-line tools, Node.js 22+, Git and Python 3.11+ are required. The bootstrap verifies pinned official
 downloads and keeps the JDK, QuPath, Fiji, upstream source and documentation in `.local`; it installs nothing globally
@@ -57,16 +59,39 @@ Voice needs AWS credits, never cash: read [FUNDING.md](docs/FUNDING.md), then `n
 `npm run enable:speech -- --authorized-aws-speech` ([AWS-TEXT.md](docs/AWS-TEXT.md), [AWS-SPEECH.md](docs/AWS-SPEECH.md)).
 Without them every local tool, the MCP server and the Fidelis workstation still work.
 
-### Fidelis on Windows
+### Windows x64: the Fidelis workstation and Penny's gateway
 
-`fidelis-app/` builds and runs on Windows x64 with the same commands (`python -I` for `python3 -I`): the pinned Fiji is
-extracted outside the repository and named by `FIDELIS_FIJI_DIR`; the build uses Fiji's bundled JDK (no Maven). The
-optional local speech worker is a Python 3.11 virtualenv from `speech/requirements.lock.txt` plus
-`speech/setup_speech.py` for the hash-pinned `tiny.en` model (`-Dfidelis.stt.python` names the interpreter). On macOS
-and Linux the same lock installs with `python3.11 -m venv .venv-stt && .venv-stt/bin/pip install --require-hashes -r
-speech/requirements.lock.txt`, then `.venv-stt/bin/python -I speech/setup_speech.py`; `WhisperSpeechService` and
-`fidelis-app/tools/test.py` default to `.venv-stt/bin/python` there, so the speech tests run. Penny's launch scripts and
-native companion are macOS only.
+`script/setup.py` and `script/setup-fiji.py` refuse to run anywhere but Apple-silicon macOS, and the launch scripts
+(`script/run-*.sh`, `script/build_and_run.sh`) and the Swift companion are macOS only. Everything else runs on Windows
+(verified 18 October 2026 on Windows 11 with the pinned Fiji):
+
+1. Extract the pinned Fiji Windows archive (`external/fiji.lock.json`: 20261013-1517, ImageJ 1.54p, bundled Zulu JDK 21)
+   **outside** the repository and set the user environment variable `FIDELIS_FIJI_DIR` to that folder. The build uses
+   Fiji's bundled JDK: no Maven, no system-wide Java, nothing inside the Fiji folder is modified.
+2. Python 3.11+ (`py -3.11 -I …` when the default `python` is older), Node.js 22+ and Git (Git Bash for the shell
+   scripts and for `npm test`, whose script sets an environment variable POSIX-style).
+
+```powershell
+py -3.11 -I fidelis-app/tools/fetch_junit.py              # once: the pinned JUnit runner
+py -3.11 -I verification/fetch_fixtures.py --only FX-003  # Blobs; the bridge and journey tests skip without it
+py -3.11 -I fidelis-app/tools/build.py                    # javac/jar with Fiji's JDK
+py -3.11 -I fidelis-app/tools/run.py --isolated-home      # the workstation on its own: typed commands, local interpreter
+py -3.11 -I fidelis-app/tools/test.py                     # JUnit 5 in one live Fiji JVM (473 tests, ~6 min)
+```
+
+3. Penny over Fidelis without the companion (typed requests and the instant routes; the model and voice need the AWS
+   credits below): write 64 random hex characters to `.local/state/bridge-token`, then in one shell
+   `set LUMA_APP=fidelis`, `set LUMA_ROOT=<checkout>`, `npm ci`, `node --import tsx packages/gateway/src/server.ts`, and
+   in another `py -3.11 -I fidelis-app/tools/run.py --isolated-home --prop luma.root=<checkout> --prop fidelis.penny=true`.
+   The workspace's Penny strip connects to the gateway on 127.0.0.1:49555 and the bridge listens on 49558.
+4. The optional local speech worker is a Python 3.11 virtualenv from `speech/requirements.lock.txt` plus
+   `speech/setup_speech.py` for the hash-pinned `tiny.en` model (`-Dfidelis.stt.python` names the interpreter). On macOS
+   and Linux the same lock installs with `python3.11 -m venv .venv-stt && .venv-stt/bin/pip install --require-hashes -r
+   speech/requirements.lock.txt`, then `.venv-stt/bin/python -I speech/setup_speech.py`; `WhisperSpeechService` and
+   `fidelis-app/tools/test.py` default to `.venv-stt/bin/python` there, so the speech tests run.
+5. Known Windows limits: the AWS-backed model and voice calls are not usable yet (the credit ledger syncs its directory
+   to disk, which Windows refuses; its tests show the EPERM), and 17 of the gateway's 252 tests fail only on Windows
+   (symlink creation without Developer Mode, that directory sync, path separators); they pass on macOS, where CI runs.
 
 ## Verify
 

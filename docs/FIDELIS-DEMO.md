@@ -91,4 +91,22 @@ python3 -I fidelis-app/tools/run.py --isolated-home -- --screenshot fidelis-app/
 ## Screenshots
 
 Real screenshots of the workstation on the real engine are in `docs/images/fidelis/` (J-12 on Blobs, the proposal
-sheet, the compare view, and the Penny strip states).
+sheet, the compare view, and the Penny strip states):
+
+- Workspace layout at the demo resolution: [j12-layout-1920x1080.png](images/fidelis/j12-layout-1920x1080.png) and at
+  the MacBook's working size [j12-layout-1500x940.png](images/fidelis/j12-layout-1500x940.png); the opt-in dark theme
+  [j12-dark-1500x940.png](images/fidelis/j12-dark-1500x940.png); labelled tools
+  [j12-labelled-tools-1500x940.png](images/fidelis/j12-labelled-tools-1500x940.png); the macro editor dock
+  [j12-editor-1500x940.png](images/fidelis/j12-editor-1500x940.png).
+- J-12 on Blobs: [j12-blobs.png](images/fidelis/j12-blobs.png), with the particle ROIs
+  [j12-blobs-roi.png](images/fidelis/j12-blobs-roi.png); the before/after compare view
+  [real-compare.png](images/fidelis/real-compare.png).
+- Typed and spoken instructions: the proposal sheet [j12-proposal.png](images/fidelis/j12-proposal.png), a typed
+  instruction proposed [j12-typed-proposal.png](images/fidelis/j12-typed-proposal.png) and executed
+  [j12-typed-executed.png](images/fidelis/j12-typed-executed.png).
+- Penny in the workspace: [penny-listening.png](images/fidelis/penny-listening.png),
+  [penny-thinking.png](images/fidelis/penny-thinking.png), [penny-running.png](images/fidelis/penny-running.png),
+  [penny-answer-flash.png](images/fidelis/penny-answer-flash.png) and
+  [penny-flash-onscreen.png](images/fidelis/penny-flash-onscreen.png), the plan card waiting for Confirm
+  [penny-plan-confirm.png](images/fidelis/penny-plan-confirm.png) and its dark variant
+  [penny-plan-confirm-dark.png](images/fidelis/penny-plan-confirm-dark.png).
