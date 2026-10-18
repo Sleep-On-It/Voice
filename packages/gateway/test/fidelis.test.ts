@@ -6,6 +6,8 @@ import { once } from 'node:events';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import WebSocket from 'ws';
+import { startServer } from '../src/server.js';
 import { profiles, selectApp, profileForTool, appIds } from '../src/apps/index.js';
 import { fidelisTools, FIDELIS_BUNDLE_ID } from '../src/apps/fidelis-tools.js';
 import { fidelisInstructions } from '../src/apps/fidelis-instructions.js';
@@ -97,7 +99,8 @@ test('Fidelis tool schemas are valid, prefixed and cover exactly the contract op
   bad('fidelis_command', { commandId: 'ij1:Process>Filters>Gaussian Blur...', params: { nested: { a: 1 } } });
   ok('fidelis_segment_cells', {}); ok('fidelis_segment_cells', { channel: 1, method: 'Otsu', dark: true, minSize: 0, maxSize: 900, pixel: true, exclude: false, watershed: true, gaussian: true, sigma: 1, replace: true });
   bad('fidelis_segment_cells', { channel: 0 }); bad('fidelis_segment_cells', { keepArtifacts: true });
-  ok('fidelis_measure', { measurements: ['area', 'mean', 'min', 'max', 'integrated', 'feret'], scope: 'rois' }); ok('fidelis_measure', { scope: 'all' }); bad('fidelis_measure', { scope: 'manager' }); bad('fidelis_measure', { measurements: ['maximum'], scope: 'roi' });
+  ok('fidelis_measure', { measurements: ['area', 'mean', 'min', 'max', 'integrated', 'feret'], scope: 'rois' }); ok('fidelis_measure', { scope: 'all' }); bad('fidelis_measure', { scope: 'manager' });
+  ok('fidelis_measure', { scope: 'rois', measurements: ['mean'], channel: 2 }); bad('fidelis_measure', { scope: 'rois', channel: 0 }); bad('fidelis_measure', { scope: 'rois', channel: 'blue' }); bad('fidelis_measure', { measurements: ['maximum'], scope: 'roi' });
   ok('fidelis_dialog', {}); ok('fidelis_dialog_action', { dialogId: 'dlg-7' }); ok('fidelis_dialog_action', { dialogId: 'dlg-7', fields: { radius: 3, f1: false }, press: 'OK' }); ok('fidelis_dialog_action', { dialogId: 'dlg-7', press: '' });
   bad('fidelis_dialog_action', {}); bad('fidelis_dialog_action', { fields: { radius: 3 }, press: 'OK' }); bad('fidelis_dialog_action', { dialogId: 'dlg-7', fields: { nested: { a: 1 } } }); bad('fidelis_dialog_action', { dialogId: 'dlg-7', button: 'OK' });
   ok('fidelis_undo', { steps: 9 }); bad('fidelis_undo', { steps: 21 }); ok('fidelis_cancel_plan', { planId: 'plan-7' }); ok('fidelis_highlight', { rois: 'active', limit: 10 });
@@ -253,6 +256,8 @@ test('local sentences speak only real results, and a waiting plan says how many 
   assert.equal(say('fidelis_confirm', completed({ rows: 1, lastRow: { Mean: 90 } })), undefined, 'no binary flag, no local intensity');
   assert.equal(say('fidelis_confirm', completed({ steps: [{}, {}] })), 'Ran 2 steps.');
   assert.equal(say('fidelis_cancel_plan', { cancelled: true }), 'Cancelled; nothing ran.');
+  assert.equal(say('fidelis_cancel_plan', { cancelled: true, planId: 'plan-9', stopped: true, engineCancelRequested: true }), 'Stopped; what had run stays in History.', 'a stopped running plan is never "nothing ran"');
+  assert.equal(say('fidelis_cancel_plan', { cancelled: false, note: 'nothing was waiting' }), 'Nothing was waiting.');
   // Reads answer with the bridge result itself.
   assert.equal(say('fidelis_rois', { total: 64, rois: [{ index: 0 }] }), '64 objects.');
   assert.equal(say('fidelis_rois', { total: 0, rois: [] }), '0 objects in the ROI list.', 'a zero keeps its digit for the instant route');
@@ -710,4 +715,36 @@ test('"run this macro" routes to fidelis_run_macro with the session macro as its
   assert.equal(fidelis.localSentenceFor('fidelis_confirm', {}, completed({ step: { label: 'Run macro (12 lines)', commandId: null }, resultsRowsAdded: 67, documentsAdded: ['doc-2'] })), 'Ran the macro: 67 result rows, 1 new image.');
   assert.equal(fidelis.localSentenceFor('fidelis_confirm', {}, completed({ step: { label: 'Run macro (12 lines)', commandId: null }, resultsRowsAdded: 67, documentsAdded: ['doc-2'], focused: 'doc-2' })), 'Ran the macro: 67 result rows, 1 new image on screen.');
   assert.equal(fidelis.localSentenceFor('fidelis_run_macro', {}, completed({ step: { label: 'Run macro (3 lines)' }, resultsRowsAdded: 0, documentsAdded: [] })), 'Ran the macro.');
+});
+
+test('Stop (stop_task) reaches the plan running in Fidelis: the gateway sends fidelis_cancel_plan to the bridge, and nothing when no plan runs', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'luma-fidelis-stop-'));
+  const bridge = await fakeBridge(root, (request, state) => {
+    if (request.operation === 'cancel_plan') { state.context = { ...state.context, running: null }; return { cancelled: true, planId: 'plan-9', stopped: true, engineCancelRequested: true }; }
+    return { ok: true };
+  });
+  const runtime = new Runtime(new BridgeAdapter(root, fidelis, bridge.port), new Knowledge(fidelis), join(root, '.local/state'), { autoApprove: true, profile: fidelis });
+  const gateway = await startServer(root, 0, { runtime, profile: fidelis });
+  const address = gateway.server.address(); assert(address && typeof address === 'object');
+  const token = (await readFile(join(root, '.local/state/companion-token'), 'utf8')).trim();
+  const ws = new WebSocket(`ws://127.0.0.1:${address.port}/events`, { headers: { Authorization: `Bearer ${token}` } });
+  const events: Array<Record<string, unknown>> = []; ws.on('message', raw => events.push(JSON.parse(raw.toString())));
+  const until = async (what: string, done: () => boolean) => { const deadline = Date.now() + 3000; while (!done()) { assert(Date.now() < deadline, `Expected ${what}`); await new Promise(resolve => setTimeout(resolve, 5)); } };
+  try {
+    await once(ws, 'open');
+    ws.send(JSON.stringify({ type: 'hello', clientId: 'fidelis-workspace-test-01', client: 'fidelis-workspace', desktop: false }));
+    // nothing runs or waits: Stop only ends the conversation's task
+    ws.send(JSON.stringify({ type: 'stop_task' }));
+    await until('the control turn to finish', () => events.filter(event => event.type === 'task_state' && event.state === 'idle').length >= 1);
+    assert.ok(!bridge.requests.some(request => request.operation === 'cancel_plan'), 'no plan to stop, nothing was sent');
+    // a plan is running in Fidelis (its context says so): Stop stops it there
+    bridge.state.context = { ...bridge.state.context, pending: null, running: { planId: 'plan-9', operation: 'measure' } };
+    ws.send(JSON.stringify({ type: 'stop_task' }));
+    await until('cancel_plan at the bridge', () => bridge.requests.some(request => request.operation === 'cancel_plan'));
+    const cancel = bridge.requests.find(request => request.operation === 'cancel_plan')!;
+    assert.deepEqual(cancel.arguments, {}); assert.equal(cancel.spoken, true); assert.equal(typeof cancel.taskId, 'string');
+    await until('the spoken reply', () => events.some(event => event.type === 'text_result'));
+    assert.equal(events.find(event => event.type === 'text_result')!.text, 'Cancelling.');
+    assert.equal(bridge.requests.filter(request => request.operation === 'cancel_plan').length, 1);
+  } finally { ws.terminate(); await gateway.close(); await bridge.close(); await rm(root, { recursive: true, force: true }); }
 });

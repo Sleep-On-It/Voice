@@ -171,6 +171,12 @@ final class PennyOps {
         final List<String> cancelledFileDialogs = Collections.synchronizedList(new ArrayList<>());
         /** The exact window of {@link #dialog} once Penny reported it (dialog_action acts on this window only). */
         volatile java.awt.Window dialogWindow;
+        /** cancel_plan on this running plan: the step being run is cancelled in the engine and no further step starts. */
+        volatile boolean stopRequested;
+        /** The engine operation of the step being run (from the engine's events), for {@link Engine#cancel}. */
+        volatile String currentOperationId;
+        /** {@link Engine#cancel} was issued for the current step (once per step). */
+        volatile boolean cancelIssued;
         List<String> reasons = List.of();
         String contextKey;
         String codeToken;
@@ -241,6 +247,13 @@ final class PennyOps {
             Plan p = sc.requestId() == null ? null : byRequest.get(sc.requestId());
             if (p != null) {
                 byOperation.put(sc.operationId(), p);
+                // the operation a stop has to cancel; the plan thread issues the cancel once the id is known
+                if (terminal(sc.state())) {
+                    if (sc.operationId().equals(p.currentOperationId)) p.currentOperationId = null;
+                } else {
+                    if (!sc.operationId().equals(p.currentOperationId)) p.cancelIssued = false;
+                    p.currentOperationId = sc.operationId();
+                }
                 if (sc.state() == OperationState.RUNNING || terminal(sc.state())) {
                     PendingDialog d = p.dialog;
                     if (d != null && d.operationId().equals(sc.operationId())) p.dialog = null;
@@ -481,9 +494,12 @@ final class PennyOps {
             for (int i = 0; i < p.steps.size(); i++) {
                 Step s = p.steps.get(i);
                 final int index = i;
+                // a stop (cancel_plan on this plan) between steps: nothing further starts
+                if (p.stopRequested) return stopped(p, i, results, null);
                 // the approval binds the whole plan: let foreign engine work finish, then make sure nothing else acted
                 // on Fidelis since the plan was approved (or since its previous step)
                 waitForForeignOps(p, i, results);
+                if (p.stopRequested) return stopped(p, i, results, null);
                 // the baseline is taken before validation: anything recorded after it makes the engine refuse the step
                 int baseline = engine.history().size();
                 if (i == 0) {
@@ -530,6 +546,14 @@ final class PennyOps {
                             break;
                         } catch (TimeoutException wait) {
                             autoCancelFileDialog(p);
+                            // a stop that arrived before the engine named this step's operation: cancel it now that it has
+                            if (p.stopRequested && !p.cancelIssued) {
+                                String opId = p.currentOperationId;
+                                if (opId != null) {
+                                    p.cancelIssued = true;
+                                    engine.cancel(opId);
+                                }
+                            }
                         }
                     }
                 } catch (InterruptedException e) {
@@ -580,6 +604,8 @@ final class PennyOps {
                     ui(() -> PennyUi.current().planFinished(p.id, false, "cancelled"));
                     return out;
                 }
+                // stopped while this step ran (it may have completed first, or the engine cancelled it): nothing further runs
+                if (p.stopRequested || res.state() == OperationState.CANCELLED) return stopped(p, i, results, res);
                 if (!res.succeeded()) throw stepFailure(p, i, res, results, null, false);
             }
             int undoable = 0;
@@ -737,10 +763,50 @@ final class PennyOps {
         }
     }
 
-    /** Wait (up to 30 s) until no engine operation other than Penny's is queued or running. */
+    /**
+     * The plan was told to stop ({@link #cancel} on a running plan) at step {@code i}: {@code res} is that step's result when
+     * it had been submitted (completed before the stop landed, or cancelled by the engine), null when it never started.
+     * Everything that ran stays in History; the result says so, step by step, and names documents the plan created.
+     */
+    private Map<String, Object> stopped(Plan p, int i, List<ActionResult> results, ActionResult res) {
+        Step s = p.steps.get(i);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("status", "cancelled");
+        out.put("planId", p.id);
+        out.put("operation", p.call.operation());
+        out.put("stopped", true);
+        List<Map<String, Object>> done = new ArrayList<>();
+        for (int k = 0; k < i && k < results.size(); k++) done.add(step(p.steps.get(k), results.get(k)));
+        out.put("completedSteps", done);
+        String at;
+        if (res == null) {
+            at = "Step " + (i + 1) + " (" + s.label() + ") was not started";
+        } else {
+            out.put("step", step(s, res));
+            out.put("state", String.valueOf(res.state()));
+            if (res.error() != null) out.put("engineMessage", res.error().message());
+            at = "Step " + (i + 1) + " (" + s.label() + ") " + (res.state() == OperationState.CANCELLED ? "was cancelled in the engine"
+                    : res.state() == OperationState.ROLLED_BACK ? "was rolled back" : res.succeeded() ? "had completed" : "ended in " + res.state());
+        }
+        int remaining = p.steps.size() - (res == null ? i : i + 1);
+        List<String> created = new ArrayList<>();
+        for (ActionResult x : results) {
+            if (x.digest() == null) continue;
+            for (DocumentId id : x.digest().added()) engine.document(id).ifPresent(d -> created.add(d.title()));
+        }
+        out.put("note", "Stopped at the researcher's request. " + at + (remaining > 0 ? "; the remaining " + remaining + " step(s) did not run." : ".")
+                + (done.isEmpty() ? "" : " " + done.size() + " earlier step(s) completed and stay in History (undoable there).")
+                + (created.isEmpty() ? "" : " Documents the plan created stay open: " + String.join(", ", created) + "."));
+        out.put("contextKey", contextKey());
+        ui(() -> PennyUi.current().planFinished(p.id, false, "stopped"));
+        return out;
+    }
+
+    /** Wait (up to 30 s) until no engine operation other than Penny's is queued or running, or the plan is told to stop. */
     private void waitForForeignOps(Plan p, int i, List<ActionResult> results) {
         long end = System.currentTimeMillis() + 30_000;
         while (!foreignOps.isEmpty()) {
+            if (p.stopRequested) return;
             if (System.currentTimeMillis() > end)
                 throw stepFailure(p, i, null, results, "Fidelis is still busy with another action (" + foreignOps.size() + " operation(s))", true);
             try {
@@ -840,31 +906,57 @@ final class PennyOps {
         t.start();
     }
 
+    /**
+     * {@code cancel_plan}: discard the plan waiting for confirmation, or stop the running plan ({@code planId} names it, or
+     * nothing waits): Cancel is pressed on the Fiji dialog it is stopped at, the step it is on is cancelled in the engine
+     * ({@link Engine#cancel}: Escape for a command, abort for a macro) and no further step starts. The plan's own result
+     * (the answer to the confirm or operation call that started it) then says {@code status: "cancelled"} and which steps
+     * completed; everything that ran stays in History and is undoable there.
+     */
     Map<String, Object> cancel(String planId) {
         Plan p = pending.get();
         Map<String, Object> out = new LinkedHashMap<>();
         Plan r = running.get();
-        PendingDialog rd = r == null ? null : r.dialog;
-        if (p == null && rd != null && (planId == null || planId.isBlank() || planId.equals(r.id))) {
-            java.awt.Window w = r.dialogWindow != null ? r.dialogWindow : DialogDriver.find(rd.title(), rd.dialogClass());
-            DialogDriver.Described dd = w == null ? null : DialogDriver.describe(w);
-            if (dd != null && dd.buttons().stream().anyMatch(b -> b.equalsIgnoreCase("Cancel"))) {
-                String before = r.cancelledDialog;
-                r.cancelledDialog = dd.title();
-                try {
-                    DialogDriver.act(w, Map.of(), "Cancel");
-                } catch (RuntimeException e) {
-                    if (!(e instanceof DialogDriver.EdtTimeout t) || t.notApplied) r.cancelledDialog = before;
-                    throw e;
+        boolean named = planId != null && !planId.isBlank();
+        if (r != null && (named ? planId.equals(r.id) : p == null)) {
+            PendingDialog rd = r.dialog;
+            if (rd != null) {
+                java.awt.Window w = r.dialogWindow != null ? r.dialogWindow : DialogDriver.find(rd.title(), rd.dialogClass());
+                DialogDriver.Described dd = w == null ? null : DialogDriver.describe(w);
+                if (dd != null && dd.buttons().stream().anyMatch(b -> b.equalsIgnoreCase("Cancel"))) {
+                    String before = r.cancelledDialog;
+                    r.cancelledDialog = dd.title();
+                    try {
+                        DialogDriver.act(w, Map.of(), "Cancel");
+                    } catch (RuntimeException e) {
+                        if (!(e instanceof DialogDriver.EdtTimeout t) || t.notApplied) r.cancelledDialog = before;
+                        throw e;
+                    }
+                    // the researcher cancelled the plan, not just its dialog: should the command outlive its Cancel, no later step runs
+                    r.stopRequested = true;
+                    out.put("cancelled", true);
+                    out.put("planId", r.id);
+                    out.put("dialogCancelled", dd.title());
+                    out.put("note", "Cancel was pressed on the Fiji dialog; the command ends as its plugin decides (see history), and no further step of the plan runs.");
+                    return out;
                 }
-                out.put("cancelled", true);
-                out.put("planId", r.id);
-                out.put("dialogCancelled", dd.title());
-                out.put("note", "Cancel was pressed on the Fiji dialog; the command ends as its plugin decides (see history).");
-                return out;
             }
+            r.stopRequested = true;
+            String opId = r.currentOperationId;
+            boolean engineCancel = opId != null && !r.cancelIssued;
+            if (engineCancel) {
+                r.cancelIssued = true;
+                engine.cancel(opId);
+            }
+            out.put("cancelled", true);
+            out.put("planId", r.id);
+            out.put("stopped", true);
+            out.put("engineCancelRequested", opId != null);
+            out.put("note", "The running plan was told to stop: " + (opId != null ? "the step it is on is being cancelled in the engine and " : "")
+                    + "no further step will start. Its own result and History say which steps completed; they stay undoable.");
+            return out;
         }
-        if (p == null || (planId != null && !planId.isBlank() && !planId.equals(p.id)) || !pending.compareAndSet(p, null)) {
+        if (p == null || (named && !planId.equals(p.id)) || !pending.compareAndSet(p, null)) {
             out.put("cancelled", false);
             out.put("note", "nothing was waiting" + (planId == null ? "" : " under " + planId));
             return out;
@@ -1842,17 +1934,26 @@ final class PennyOps {
         if (switchChannel && !scope.equals("rois"))
             p.steps.add(directStep(p, "channel", Operations.SET_POSITION, "Channel " + useChannel + (channelArg != null ? "" : " (segmented there)"), "Image>Stacks>Set Channel",
                     map("channel", useChannel), prov("channel", channelArg != null ? Params.USER : Params.DERIVED), "Stack.setChannel(" + useChannel + ");", ts));
+        // the channels actually measured, and what chose each (argument, segmented, roi position, displayed): the result
+        // reports the channel measured and that rule, never the argument's number for a channel the ROI's position decided
         final Set<Integer> measuredChannels = new LinkedHashSet<>();
+        final Set<String> measuredBy = new LinkedHashSet<>();
         switch (scope) {
             case "roi" -> {
                 p.steps.add(commandStep(p, "measure", PennyCommands.MEASURE, Map.of(), Map.of(), ts));
-                if (d.nChannels() > 1) measuredChannels.add(useChannel != null ? useChannel : shownChannel);
+                if (d.nChannels() > 1) {
+                    measuredChannels.add(useChannel != null ? useChannel : shownChannel);
+                    measuredBy.add(useChannel != null ? channelBy : "displayed");
+                }
             }
             case "all" -> {
                 if (active.isPresent()) p.steps.add(directStep(p, "clear", Operations.CLEAR_ROI, "Select None", "Edit>Selection>Select None",
                         Map.of(), Map.of(), "run(\"Select None\");", ts));
                 p.steps.add(commandStep(p, "measure", PennyCommands.MEASURE, Map.of(), Map.of(), ts));
-                if (d.nChannels() > 1) measuredChannels.add(useChannel != null ? useChannel : shownChannel);
+                if (d.nChannels() > 1) {
+                    measuredChannels.add(useChannel != null ? useChannel : shownChannel);
+                    measuredBy.add(useChannel != null ? channelBy : "displayed");
+                }
                 if (active.isPresent()) p.steps.add(directStep(p, "restore", Operations.SET_ROI, "Restore the selection", "Edit>Selection>Restore Selection",
                         map("roi", active.get()), prov("roi", Params.DERIVED), "// restore the selection", ts));
             }
@@ -1871,11 +1972,26 @@ final class PennyOps {
                         pz = pos[1] > 0 ? pos[1] : null;
                         pt = pos[2] > 0 ? pos[2] : null;
                     }
-                    // an ROI without a channel of its own is measured on the requested or segmented channel
-                    if (pc == null && useChannel != null) pc = useChannel;
+                    // the channel asked for wins over the ROI's own (objects found on the DAPI channel, intensity wanted on
+                    // another); an ROI without a channel of its own is measured on the segmented channel, else where it is
+                    String by;
+                    if (channelArg != null) {
+                        pc = channelArg;
+                        by = "argument";
+                    } else if (pc != null) {
+                        by = "roi position";
+                    } else if (useChannel != null) {
+                        pc = useChannel;
+                        by = "segmented";
+                    } else {
+                        by = "displayed";
+                    }
                     boolean placed = pc != null || pz != null || pt != null;
                     moved |= placed;
-                    if (d.nChannels() > 1) measuredChannels.add(pc != null ? pc : c0);
+                    if (d.nChannels() > 1) {
+                        measuredChannels.add(pc != null ? pc : c0);
+                        measuredBy.add(by);
+                    }
                     // unspecified coordinates mean the plane the measurement started on, not wherever a previous ROI left the image
                     TargetScope roiTarget = d.isStack()
                             ? new TargetScope(d.id(), pc != null ? pc : c0, pz != null ? pz : z0, pt != null ? pt : t0, false, i)
@@ -1931,8 +2047,11 @@ final class PennyOps {
             m.put("scope", sc);
             if (measuredChannels.size() == 1) {
                 m.put("channel", measuredChannels.iterator().next());
-                m.put("channelBy", channelBy != null ? channelBy : sc.equals("rois") ? "roi position" : "displayed");
-            } else if (!measuredChannels.isEmpty()) m.put("channels", new ArrayList<>(measuredChannels));
+                m.put("channelBy", measuredBy.size() == 1 ? measuredBy.iterator().next() : "roi position");
+            } else if (!measuredChannels.isEmpty()) {
+                m.put("channels", new ArrayList<>(measuredChannels));
+                m.put("channelBy", "roi position");
+            }
             if (sc.equals("rois")) m.put("highlight", Highlight.rois(d.id(), engine.rois(d.id()), "Measured " + rows.size() + " regions", HIGHLIGHT_LIMIT, true));
             else if (sc.equals("roi") && active.isPresent()) m.put("highlight", Highlight.rois(d.id(), List.of(active.get()), "Measured the selection", 1, true));
             else m.put("highlight", Highlight.canvas(d.id(), "Measured the whole image"));

@@ -345,8 +345,14 @@ final class CompanionModel: ObservableObject {
             showResult(message, isError: true)
             expanded = true
         case "voice_state":
-            guard let requestID = event["requestId"] as? String, requestID == voiceRequestID else { return }
+            guard let requestID = event["requestId"] as? String else { return }
             let state = event["state"] as? String
+            if requestID != voiceRequestID {
+                // The gateway confirmed the end of a session this companion already dropped (audio backlog): voice is still
+                // wanted and nothing else is starting, so re-arm it now that the gateway's voice slot is free.
+                if state == "idle", voiceRequestID == nil, voiceWanted { armVoiceIfWanted() }
+                return
+            }
             if state == "connecting", let id = event["sessionId"] as? String { resetVoice(keepingRequest: true); voiceSessionID = id; voiceStarting = true }
             else if state == "ready_for_audio", let id = event["sessionId"] as? String, id == voiceSessionID { startMicrophone(sessionID: id) }
             else if state == "listening", event["sessionId"] as? String == voiceSessionID { providerListening = true; voiceActive = capturing; voiceStarting = !capturing; pointer.follow(true) }
@@ -512,7 +518,10 @@ final class CompanionModel: ObservableObject {
     }
     private func enqueueAudio(_ data: Data, sessionID: String) {
         guard audioPendingBytes + data.count <= 48000 else {
-            // A stalled socket, not a user decision: reset and let the reconnect re-arm voice.
+            // A stalled socket, not a user decision. End the session on the gateway too: it keeps holding voice for this
+            // request otherwise, and silently ignores the next start_voice, so the bar stays Connecting. The gateway's
+            // idle for this (dropped) request re-arms voice (see voice_state below); voiceWanted stays true.
+            if let id = voiceRequestID { send(["type": "stop_voice", "requestId": id]) }
             resetVoice()
             activities.insert(Activity(title: "Voice restarting", detail: "Audio could not be sent in time; reconnecting.", isError: true), at: 0)
             return

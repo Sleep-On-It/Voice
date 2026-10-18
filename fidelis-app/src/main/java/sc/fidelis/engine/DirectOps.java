@@ -23,6 +23,7 @@ import sc.fidelis.engine.api.Enums.ErrorCode;
 import sc.fidelis.engine.api.Enums.OperationState;
 import sc.fidelis.engine.api.Enums.Provenance;
 import sc.fidelis.engine.api.HistoryRecord;
+import sc.fidelis.engine.api.MeasurementRow;
 import sc.fidelis.engine.api.RoiGeometry;
 import sc.fidelis.engine.api.TargetScope;
 
@@ -184,7 +185,42 @@ final class DirectOps {
                 }
                 case Operations.ROI_LIST_ADD -> {
                     Object from = r.params().get("fromDocument");
-                    if (from != null) {
+                    Redo redo = op.redo;
+                    if (redo != null && redo.replaysState()) {
+                        // REDO of an undone add/copy: re-establish what the undo recorded (the objects it removed from the
+                        // list and the Results rows it took out and put back) instead of running the request again, whose
+                        // source document (segment_cells' mask) is normally closed by now
+                        boolean replace = redo.replace();
+                        List<Roi> copies = new ArrayList<>();
+                        for (Roi x : redo.roisAdded()) copies.add((Roi) x.clone());
+                        String resultsOf = redo.resultsAction();
+                        if (resultsOf != null) params.put("resultsOf", resultsOf);
+                        // undoing this redo removes the rows again and puts the cleared ones back, as the first undo did
+                        stateSnap = eng.snapshots.take(doc, null, r, !fromRedo, false, true, redo.rowsRemoved() != null, redo.rowsRestored(), resultsOf);
+                        eng.emitState(op, OperationState.RUNNING, null);
+                        synchronized (doc.roiList) {
+                            if (replace) doc.roiList.clear();
+                            doc.roiList.addAll(copies);
+                            params.put("count", (long) copies.size());
+                            params.put("total", (long) doc.roiList.size());
+                        }
+                        if (from != null) params.put("fromDocument", String.valueOf(from));
+                        if (r.params().get("position") instanceof List<?> pl && pl.size() == 3) params.put("position", List.copyOf(pl));
+                        params.put("replace", replace);
+                        params.put("redone", true);
+                        if (redo.rowsRemoved() != null) {
+                            int[] rows = eng.results.redoAction(redo.rowsRestored(), redo.rowsRemoved());
+                            params.put("resultsRowsBefore", rows[0]);
+                            params.put("resultsRowsAfter", rows[1]);
+                        }
+                        if (replace) lines.add("roiManager(\"reset\");");
+                        for (Roi x : copies) {
+                            lines.addAll(RoiCodec.macroLines(RoiCodec.toGeometry(x)));
+                            lines.add("roiManager(\"add\");");
+                        }
+                        lines.add("run(\"Select None\");");
+                        exact = false;
+                    } else if (from != null) {
                         // opt-in: copy another document's ROI list (objects segmented on a derived mask, kept on the original)
                         Doc src = eng.registry.get(String.valueOf(from));
                         if (src == null) throw new Bad("fromDocument " + from + " is not open");
@@ -202,10 +238,13 @@ final class DirectOps {
                             params.put("position", List.of(pos[0], pos[1], pos[2]));
                         }
                         // resultsOf: the measurements of the copied objects (an Analyze Particles on the source) go with them,
-                        // so undoing the copy also removes those Results rows
+                        // so undoing the copy also removes those Results rows, and puts back the rows that action cleared
+                        // (its own snapshot on the source records them; the source is closed, and that snapshot lost, before
+                        // the original is ever undone)
                         String resultsOf = r.params().get("resultsOf") instanceof String ro && !ro.isBlank() ? ro : null;
                         if (resultsOf != null) params.put("resultsOf", resultsOf);
-                        stateSnap = eng.snapshots.take(doc, null, r, !fromRedo, false, true, resultsOf != null, null, resultsOf);
+                        List<MeasurementRow> cleared = resultsOf == null ? null : clearedBy(src, resultsOf);
+                        stateSnap = eng.snapshots.take(doc, null, r, !fromRedo, false, true, resultsOf != null, cleared, resultsOf);
                         eng.emitState(op, OperationState.RUNNING, null);
                         synchronized (doc.roiList) {
                             if (replace) doc.roiList.clear();
@@ -346,10 +385,12 @@ final class DirectOps {
         eng.emitState(op, OperationState.RUNNING, null);
         boolean hashAll = doc.imp.getStackSize() > 1;
         String hBefore = Pixels.hash(doc.imp, hashAll);
+        // what a redo has to re-establish, recorded before the restore changes it (see Redo)
+        Redo redo = redoEntry(doc, snap);
         Snapshots.Restored back = Snapshots.restore(snap, eng.results);
         eng.snapshots.release(snap);
         synchronized (doc.undo) {
-            doc.redo.addFirst(snap.request);
+            doc.redo.addFirst(redo);
         }
         boolean px = !hBefore.equals(Pixels.hash(doc.imp, hashAll));
         String actionId = eng.history.nextId();
@@ -376,22 +417,58 @@ final class DirectOps {
     }
 
     private Outcome redo(Op op, Doc doc) {
-        ActionRequest req;
+        Redo entry;
         synchronized (doc.undo) {
-            req = doc.redo.pollFirst();
+            entry = doc.redo.pollFirst();
         }
-        if (req == null) return Outcome.failed(ErrorCode.PRECONDITION_FAILED, "nothing to redo for this document");
+        if (entry == null) return Outcome.failed(ErrorCode.PRECONDITION_FAILED, "nothing to redo for this document");
+        ActionRequest req = entry.request();
         ActionRequest replay = new ActionRequest(req.requestId() + "-redo", sc.fidelis.engine.api.Enums.Origin.REPLAY, req.kind(),
                 req.commandId(), req.operation(), req.params(), req.target(), req.confirmationToken(),
                 req.requestId());
-        Outcome o = req.kind() == sc.fidelis.engine.api.Enums.ActionKind.DIRECT ? runDirect(new Op(op.id, replay))
-                : eng.runner.run(new Op(op.id, replay), true);
+        Op again = new Op(op.id, replay);
+        again.redo = entry; // a ROI-list add/copy replays its recorded state (see Redo); every other request runs again
+        Outcome o = req.kind() == sc.fidelis.engine.api.Enums.ActionKind.DIRECT ? runDirect(again) : eng.runner.run(again, true);
         if (o.state() != OperationState.COMPLETED) {
             synchronized (doc.undo) {
-                doc.redo.addFirst(req);
+                doc.redo.addFirst(entry);
             }
         }
         return o;
+    }
+
+    /**
+     * The redo entry for undoing {@code snap}: for a ROI-list add/copy, the objects the action added (the whole list when
+     * it replaced it, else the entries beyond the snapshot's) and the Results rows this undo removes ({@code resultsAction}'s)
+     * and puts back ({@code clearedRows}), all read before the restore. Other actions are redone by re-running their request.
+     */
+    private Redo redoEntry(Doc doc, Snapshots.Snapshot snap) {
+        ActionRequest req = snap.request;
+        if (req == null || req.kind() != sc.fidelis.engine.api.Enums.ActionKind.DIRECT || !Operations.ROI_LIST_ADD.equals(req.operation())
+                || snap.rois == null)
+            return Redo.of(req);
+        boolean replace = Boolean.TRUE.equals(req.params().get("replace"));
+        List<Roi> added = new ArrayList<>();
+        synchronized (doc.roiList) {
+            int start = replace ? 0 : Math.min(doc.roiList.size(), snap.rois.size());
+            for (int i = start; i < doc.roiList.size(); i++) added.add((Roi) doc.roiList.get(i).clone());
+        }
+        List<MeasurementRow> removed = null;
+        String action = null;
+        if (snap.results) {
+            action = snap.resultsAction != null ? snap.resultsAction : snap.actionId;
+            removed = new ArrayList<>();
+            if (action != null) for (MeasurementRow row : eng.results.all()) if (action.equals(row.actionId())) removed.add(row);
+        }
+        return new Redo(req, added, replace, removed, snap.clearedRows, action);
+    }
+
+    /** The Results rows the action {@code actionId} cleared, as its own undo snapshot on {@code src} recorded them; null when none. */
+    private static List<MeasurementRow> clearedBy(Doc src, String actionId) {
+        synchronized (src.undo) {
+            for (Snapshots.Snapshot s : src.undo) if (actionId.equals(s.actionId) && s.clearedRows != null) return s.clearedRows;
+        }
+        return null;
     }
 
     // ---- session: SAVE_AS, NEW_IMAGE -------------------------------------------------------------------

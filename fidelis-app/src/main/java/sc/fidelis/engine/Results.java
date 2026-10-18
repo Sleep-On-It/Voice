@@ -1,10 +1,12 @@
 package sc.fidelis.engine;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 import ij.measure.ResultsTable;
@@ -230,8 +232,38 @@ final class Results {
     synchronized int[] undoAction(String actionId, List<MeasurementRow> clearedRows) {
         int before = rows.size();
         List<MeasurementRow> next = new ArrayList<>();
-        if (clearedRows != null) next.addAll(clearedRows);
+        if (clearedRows != null) {
+            // rows already back in the table (the same clear undone through another document's snapshot) are not duplicated
+            Set<String> present = new HashSet<>();
+            for (MeasurementRow r : rows) if (r.actionId() != null) present.add(r.actionId());
+            for (MeasurementRow r : clearedRows) if (r.actionId() == null || !present.contains(r.actionId())) next.add(r);
+        }
         for (MeasurementRow r : rows) if (actionId == null || !actionId.equals(r.actionId())) next.add(r);
+        rewrite(next);
+        return new int[] {before, rows.size()};
+    }
+
+    /**
+     * Redo what an undo did to the table: the rows that undo put back ({@code restored}: rows the action had cleared,
+     * together with any other row from before that clear) are cleared again, and the rows it removed ({@code removed}:
+     * the action's own) are appended again with their bits and attribution intact. Returns {rows before, rows after}.
+     */
+    synchronized int[] redoAction(List<MeasurementRow> restored, List<MeasurementRow> removed) {
+        int before = rows.size();
+        Set<String> cleared = new HashSet<>();
+        if (restored != null) for (MeasurementRow r : restored) if (r.actionId() != null) cleared.add(r.actionId());
+        List<MeasurementRow> next = new ArrayList<>();
+        for (MeasurementRow r : rows) {
+            boolean wiped = restored != null && (r.actionId() == null || cleared.contains(r.actionId()));
+            if (!wiped) next.add(r);
+        }
+        if (removed != null) next.addAll(removed);
+        rewrite(next);
+        return new int[] {before, rows.size()};
+    }
+
+    /** Make the live IJ1 table and the mirror equal {@code next} (renumbered), as one restart of the table. Caller holds the lock. */
+    private void rewrite(List<MeasurementRow> next) {
         ResultsTable rt = ResultsTable.getResultsTable();
         if (rt == null) rt = new ResultsTable();
         rt.reset();
@@ -254,7 +286,6 @@ final class Results {
         generation++;
         int total = rows.size();
         events.emit(seq -> new EngineEvent.ResultsChanged(seq, total));
-        return new int[] {before, total};
     }
 
     MeasurementRow.Columns columns() {

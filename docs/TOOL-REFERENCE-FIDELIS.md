@@ -144,12 +144,13 @@ Segment nuclei/cells on the focused document: blur, auto threshold (method, defa
 
 ## fidelis_measure
 
-Measure with ImageJ: the requested Set Measurements keys (area, mean, min, max, integrated, shape, …) on the active ROI (scope roi; the whole image without one), the whole document (all) or every ROI-list entry (rois). Returns rows, lastRow, per-column min/max/mean/count summary and unit. Numbers come from here.
+Measure with ImageJ: the requested Set Measurements keys (area, mean, min, max, integrated, shape, …) on the active ROI (scope roi; the whole image without one), the whole document (all) or every ROI-list entry (rois). Multichannel: channel is measured for every ROI, else the segmented channel, else each ROI’s own. Returns rows, lastRow, summary, unit, channel, channelBy; numbers come from here.
 
-| Parameter | Required | Accepted value |
-|---|---|---|
-| `measurements` | No | array of ("area", "mean", "min", "max", "standard", "modal", "centroid", "center", "perimeter", "bounding", "fit", "shape", "feret", "integrated", "median", "skewness", "kurtosis", "area_fraction", "stack"); max 19 items; unique items |
-| `scope` | Yes | "roi", "all", "rois" |
+| Parameter | Required | Accepted value | Description |
+|---|---|---|---|
+| `measurements` | No | array of ("area", "mean", "min", "max", "standard", "modal", "centroid", "center", "perimeter", "bounding", "fit", "shape", "feret", "integrated", "median", "skewness", "kurtosis", "area_fraction", "stack"); max 19 items; unique items |  |
+| `scope` | Yes | "roi", "all", "rois" |  |
+| `channel` | No | integer; min 1 | Channel to measure intensities on (1-based); overrides each ROI’s own channel. |
 
 <a id="fidelis-threshold"></a>
 

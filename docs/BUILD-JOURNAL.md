@@ -369,3 +369,53 @@ Gateway-only, protocol-tested with a loopback fake bridge (`packages/gateway/tes
 - Readiness for Fidelis reads `adapter.operations` from the bridge's `GET /health` (`operations_match`); `./script/run-fidelis.sh` builds and launches Fidelis with `run.py --prop luma.root=…` (new pass-through). Details and the contract readings the bridge should match: [INTEGRATION.md](INTEGRATION.md).
 - Review passes (Codex autoreview, accepted and fixed): waiting plans are recorded with `outcome: "awaiting_confirmation"`; only the researcher's unambiguous "yes" confirms, bound to the plan pending when it was said; instant routes are bound to their observed `contextKey`; spoken intensities need `document.binary: false` because `segment_cells` leaves the mask in place; zero counts keep their digit; launcher detection handles paths with spaces.
 - `/events`: desktop requests go only to sockets whose hello does not say `desktop: false` (the Fidelis workspace), and a voice clash names the client holding voice.
+
+## 18 October 2026 — final-phase stability fixes (`fix/final-stability`, Alex)
+
+The five bugs of the final handoff, each with its status and the evidence (Windows 11 x64, pinned Fiji 20261013-1517,
+ImageJ 1.54p, Fiji's bundled Zulu JDK 21; every number read back from the engine's own mirrors, never from the bridge's
+claims):
+
+- **BUG-01 engine cancellation — fixed.** `cancel_plan` on a *running* plan (planId names it, or nothing waits) now sets a
+  stop flag on the plan, cancels the step it is on through `Engine.cancel` (Escape for a command, abort for a macro; the
+  plan thread issues it as soon as the engine names the step's operation) and starts no further step. The plan's own
+  result comes back `status:"cancelled", stopped:true` with the completed steps, the state of the step the stop landed
+  on and the documents the plan created (a mask stays open). Cancel on a Fiji dialog also stops the plan afterwards.
+  The gateway turns the companion's and the workspace's **Stop** (`stop_task`) into the profile's instant stop route
+  (`fidelis_cancel_plan {}`); a stopped plan is never phrased as "nothing ran". Evidence:
+  `FidelisBridgeStabilityTest.aRunningPlanStopsOnCancelPlanAndItsLaterStepsNeverRun` (67-ROI `measure rois` stopped at
+  its 4th step: 4 steps completed, 4 rows measured, the other 63 never ran, the next plan runs),
+  `aRunningMacroIsAbortedByCancelPlan` (a 20 s macro stopped 48 ms after `cancel_plan`, engine state CANCELLED, history
+  "macro was cancelled"); gateway `fidelis.test.ts` "Stop (stop_task) reaches the plan running in Fidelis".
+- **BUG-02 Results restoration on undo — fixed.** The ROI copy step's snapshot (`ROI_LIST_ADD` with `resultsOf`) now takes
+  the rows its Analyze Particles cleared from the mask's own snapshot while the mask is still open, so undoing the copy
+  removes the particle rows *and* puts the earlier measurements back, bit for bit; the mask's closure no longer loses
+  them. Evidence: `measurementRowsClearedByASegmentationComeBackOnUndo` (Measure → segment: rows 1 → 67 → undo → 1, the
+  row's label, attribution and every double identical; live IJ1 table equals the mirror). The journey test
+  `theMaskIsClosedAgainByDefaultSoRepeatsDoNotPileUpTabs` expected the old lossy state (0 rows after undoing the second
+  segmentation while 67 objects came back); it now asserts objects and rows agree (67 and 67, then 0 and 0).
+- **BUG-03 segmentation redo — fixed.** Redo no longer re-runs the ROI copy against its closed mask (409 "fromDocument …
+  is not open"): the undo records what it removed (`engine/Redo.java`: the objects added, the Results rows removed and
+  restored) and the redo re-establishes exactly that as one `ROI_LIST_ADD` record flagged `redone`, undoable again.
+  Evidence: `anUndoneSegmentationIsRedoneWithoutItsClosedMask` (67 objects back vertex for vertex, 67 rows bit for bit
+  and attributed to the Analyze Particles, the earlier measurement cleared again, pixels unchanged, undo of the redo
+  back to the measured state).
+- **BUG-04 channel-aware measurement — fixed.** `fidelis_measure` accepts `channel` (schema, generated reference). For
+  `scope: rois` a requested channel is measured for every ROI, whatever channel it was found on; without it each ROI's
+  own channel, then the segmented one, then the displayed one. `channel`/`channelBy` report the channel actually
+  measured (never the argument's number for a channel the ROI decided). Evidence:
+  `aRequestedChannelIsMeasuredAndReportedForEveryRoi` (2-channel ramp, ROI found on channel 1: `channel: 2` → mean 160,
+  "argument"; no argument → mean 60, "roi position"; viewer back on channel 1).
+- **BUG-05 macOS voice backlog recovery — prepared, not verified.** The companion now sends `stop_voice` for the request
+  it drops on an audio backlog (the gateway kept holding voice for it and silently ignored the next `start_voice`, so the
+  bar stayed Connecting) and re-arms voice on the gateway's `idle` for that request. Not compiled: no Swift toolchain on
+  Windows; Ayush builds and tests it on the Mac. Gateway note for Ayush: `start_voice` from the same socket while
+  `voiceOwner` is still set is silently ignored (`server.ts`), and `stop_voice` may release the owner only when the
+  speech session closes; answering `voice_error` or superseding the old session would close that gap.
+
+Suites: Fidelis `tools/test.py` 473 tests, 0 failed (17 assumption skips: 14 speech tests without a local Whisper venv on
+this machine, 3 J-12 baselines whose licence-restricted fixtures FX-030/FX-031 are not cached). Gateway: `tsc` clean,
+`docs:check` clean; `fidelis`, `server` and `apps` tests 41 pass, 1 Windows-only failure (knowledge source paths with
+backslashes, pre-existing); the whole gateway suite 233/252 with the same 17 Windows-only failures as `main` a27a892
+(symlinks without Developer Mode, directory fsync in the credit ledger, path separators). Docs: FIDELIS-PROTOCOL rows for
+`cancel_plan`, `measure` and undo/redo; INTEGRATION Stop passages; TOOL-REFERENCE-FIDELIS regenerated.

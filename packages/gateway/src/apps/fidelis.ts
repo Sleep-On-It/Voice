@@ -179,7 +179,8 @@ function localSentenceFor(name: string, args: Record<string, unknown>, result: u
     const area = record(raw.area), mean = finite(area?.mean), median = finite(area?.median);
     return `${plural(n, 'object')}${mean !== undefined ? `, mean area ${spokenArea(mean, raw.unit)}` : ''}${median !== undefined ? `, median ${spokenArea(median, raw.unit)}` : ''}.`;
   }
-  if (name === 'fidelis_cancel_plan') return raw.dialogCancelled ? 'Cancelled the waiting dialog.' : 'Cancelled; nothing ran.';
+  // A stopped running plan is never announced as "nothing ran": its completed steps stay in History.
+  if (name === 'fidelis_cancel_plan') return raw.stopped ? 'Stopped; what had run stays in History.' : raw.dialogCancelled ? 'Cancelled the waiting dialog.' : raw.cancelled === false ? 'Nothing was waiting.' : 'Cancelled; nothing ran.';
   if (name === 'fidelis_macro') return macroSentence(raw);
   if (inner === undefined) return undefined;
   if (name === 'fidelis_segment_cells' || name === 'fidelis_analyze_particles') return countSentence(inner);

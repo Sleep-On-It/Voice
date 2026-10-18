@@ -162,7 +162,10 @@ Screenshots, all in the default **light** theme: `docs/images/fidelis/penny-list
   request is shortened first so the answer stays readable, and the full text is in the tooltip. Speech the gateway marks
   as not addressed to Penny is not shown.
 - **Stop task** or **Stop speaking** appears while a task runs or Penny talks. It sends `stop_task` and drops the rest of the
-  reply locally, the same as the Swift companion's Stop.
+  reply locally, the same as the Swift companion's Stop. Since 18 Oct the gateway turns `stop_task` into the profile's
+  instant stop route as well (`fidelis_cancel_plan {}`), so the plan running in the bridge is stopped too: the engine
+  cancels the step it is on and no later step starts (before, Stop only abandoned the conversation while the plan ran
+  on; see BUG-01 in the final handoff).
 - The strip is hidden while Penny's gateway has never been reachable. After a disconnect it shows *Reconnecting…* for 8 s,
   then hides until the socket returns. A plan keeps it visible.
 
@@ -375,8 +378,10 @@ A result `{status: "awaiting_confirmation", planId, reasons, steps}` is never re
   whether…" are not. Neither the model on its own nor a direct `/tools/call` or MCP client can confirm. A typed "yes"
   reaches the model, which may then confirm; the Fidelis card's own Confirm never passes through Penny.
 - Spoken "stop", "cancel" or "cancel that" is consumed by the voice transport as barge-in; for Fidelis
-  (`controlRoutes`) it is then offered to the instant routes only, so it cancels a waiting plan and otherwise does
-  nothing more (it never reaches the model).
+  (`controlRoutes`) it is then offered to the instant routes only, so it cancels a waiting plan, stops a running one
+  (`fidelis_cancel_plan {}`: Cancel on its Fiji dialog, else `Engine.cancel` of the current step and no further step;
+  the plan's result comes back `status: "cancelled", stopped: true`) and otherwise does nothing more (it never reaches
+  the model).
 - The assent belongs to the plan that was pending when those words arrived (the request's first observation): if
   another plan replaced it since, the confirm is refused ("The plan changed after you said yes; check the new plan and
   say yes again."). The gateway fills `planId` from that plan and refuses one that is no longer pending, or "Nothing is

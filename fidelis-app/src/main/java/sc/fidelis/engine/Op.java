@@ -26,6 +26,8 @@ final class Op {
 
     /** Set by a tail CommandListener when ImageJ really started the command (no earlier listener vetoed it). */
     volatile boolean commandRan;
+    /** For a REDO replay of a ROI-list copy: the recorded state the replay re-establishes (set by DirectOps.redo). */
+    volatile Redo redo;
 
     Op(String id, ActionRequest request) {
         this.id = id;

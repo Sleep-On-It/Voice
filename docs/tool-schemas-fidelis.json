@@ -251,7 +251,7 @@
     },
     {
       "name": "fidelis_measure",
-      "description": "Measure with ImageJ: the requested Set Measurements keys (area, mean, min, max, integrated, shape, …) on the active ROI (scope roi; the whole image without one), the whole document (all) or every ROI-list entry (rois). Returns rows, lastRow, per-column min/max/mean/count summary and unit. Numbers come from here.",
+      "description": "Measure with ImageJ: the requested Set Measurements keys (area, mean, min, max, integrated, shape, …) on the active ROI (scope roi; the whole image without one), the whole document (all) or every ROI-list entry (rois). Multichannel: channel is measured for every ROI, else the segmented channel, else each ROI’s own. Returns rows, lastRow, summary, unit, channel, channelBy; numbers come from here.",
       "operation": "measure",
       "risk": "data",
       "inputSchema": {
@@ -293,6 +293,11 @@
               "all",
               "rois"
             ]
+          },
+          "channel": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Channel to measure intensities on (1-based); overrides each ROI’s own channel."
           }
         },
         "required": [

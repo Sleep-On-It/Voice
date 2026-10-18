@@ -162,7 +162,12 @@ export async function startServer(root:string,port=49555,options:ServerOptions={
         else if(event.type==='audio'){const voice=voiceSessions.get(ws);if(voice&&event.sessionId===voice.id){try{voice.acceptAudio(event.audio);}catch(error){voice.stop('Invalid microphone stream.');throw error;}}}
         // spoken:true lets a typed request run exactly like a voice turn (acknowledgments, local finish) for test harnesses.
         else if(event.type==='text'){voiceSessions.get(ws)?.interrupt();await conversation.submit(event.text,event.spoken===true);}
-        else if(event.type==='stop_task'){conversation.stop();voiceSessions.get(ws)?.interrupt();}
+        else if(event.type==='stop_task'){
+          conversation.stop();voiceSessions.get(ws)?.interrupt();
+          // Stop reaches the application too: a profile with control routes (Fidelis) turns it into its instant stop route
+          // (fidelis_cancel_plan), which cancels the plan running in the bridge instead of only abandoning the conversation.
+          if(profile.controlRoutes)await conversation.control('stop');
+        }
         else if(event.type==='stop_voice'){
           if(voiceOwner?.peer===ws&&voiceOwner.requestId===event.requestId){voiceSessions.get(ws)?.stop();if(!voiceSessions.has(ws))voiceOwner=undefined;send({type:'voice_state',state:'idle',requestId:event.requestId});}
         }
